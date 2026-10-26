@@ -1,0 +1,1712 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Miista — Fashion Futures Prototype</title>
+<meta name="description" content="Non-commercial academic prototype. Not affiliated with or operated by Miista." />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['"Helvetica Neue"', 'Helvetica', 'Arial', 'sans-serif'] },
+        letterSpacing: { mi: '0.12em' },
+      },
+    },
+  };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  html, body { background:#fff; color:#000; }
+  body { font-family:"Helvetica Neue",Helvetica,Arial,sans-serif; font-size:13px; line-height:1.4; -webkit-font-smoothing:antialiased; }
+  .cap { text-transform:uppercase; letter-spacing:.12em; font-size:11px; }
+  .ulink { background-image:linear-gradient(currentColor,currentColor); background-size:0 1px; background-repeat:no-repeat; background-position:0 100%; transition:background-size .3s; }
+  .ulink:hover, .ulink.on { background-size:100% 1px; }
+  .fade { animation:fade .5s ease both; }
+  @keyframes fade { from { opacity:0; transform:translateY(6px);} to { opacity:1; transform:none; } }
+  .noscroll::-webkit-scrollbar { display:none; } .noscroll { scrollbar-width:none; }
+  .grain { background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='.35'/></svg>"); mix-blend-mode:overlay; }
+  input, select, textarea { border-radius:0; }
+  .field { width:100%; border:0; border-bottom:1px solid #000; padding:10px 0; background:transparent; font-size:13px; outline:none; }
+  .field:focus { border-bottom-width:2px; }
+  .field.err { border-bottom-color:#b00020; }
+  .btn { display:inline-flex; align-items:center; justify-content:center; height:44px; padding:0 24px; background:#000; color:#fff; text-transform:uppercase; letter-spacing:.12em; font-size:11px; transition:opacity .2s; }
+  .btn:hover { opacity:.8; } .btn:disabled { opacity:.35; cursor:not-allowed; }
+  .btn-o { background:#fff; color:#000; border:1px solid #000; }
+  .btn-o:hover { background:#000; color:#fff; opacity:1; }
+  :focus-visible { outline:1px solid #000; outline-offset:2px; }
+  #boot { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:11px; letter-spacing:.04em; text-transform:uppercase; }
+</style>
+</head>
+<body>
+<div id="root"><div id="boot">Miista</div></div>
+
+<script>
+  Babel.registerPreset('tsx', {
+    presets: [
+      [Babel.availablePresets['typescript'], { allExtensions: true, isTSX: true }],
+      [Babel.availablePresets['react']],
+    ],
+  });
+</script>
+
+<script type="text/babel" data-presets="tsx">
+/* =====================================================================
+   MIISTA — FASHION FUTURES PROTOTYPE
+   Non-commercial academic prototype. Not affiliated with, endorsed by
+   or operated by Miista. Product names, colourways and retail prices
+   are taken from miista.com/en (AW26, viewed 26 Oct 2026). All circular
+   services (repair guarantee, Pre-Owned, Miista × SCRAP), resale prices,
+   conditions, stock and store participation are PROPOSED / ILLUSTRATIVE.
+
+   IMAGES: product, campaign and editorial photography is loaded
+   directly from Miista's public image CDN (cdn.sanity.io), as used on
+   miista.com/en (26 Oct 2026). Images © Miista; used here only for a
+   non-commercial academic prototype. Concept products for Miista × SCRAP
+   have no imagery and remain labelled placeholders.
+   Any slot can be overridden via IMAGE_SOURCES or "Image mode".
+   ===================================================================== */
+
+const { useState, useEffect, useMemo, useRef, useContext, createContext } = React;
+
+
+/* ------------------------------ Types ------------------------------ */
+type Cat = 'shoes' | 'clothing' | 'accessories';
+type Product = {
+  id: string; name: string; colour: string; price: number; cat: Cat;
+  type: string; row: 1 | 2; tone: string; icon?: boolean;
+};
+type Condition = 'Excellent' | 'Very Good' | 'Good';
+type PreOwned = {
+  id: string; productId: string; size: number; condition: Condition;
+  price: number; imperfections: string; restoration: string;
+};
+type BagItem = { key: string; kind: 'new' | 'preowned'; id: string; size: string; qty: number };
+type Store = { id: string; city: string; country: string; address: string; verified: boolean; x: number; y: number };
+
+/* ------------------------------ Data ------------------------------ */
+const TONES: [RegExp, string][] = [
+  [/burgundy/i, '#5a1e24'], [/dark brown/i, '#3d2b20'], [/brown grey/i, '#6d6157'],
+  [/brown/i, '#6a4b37'], [/ecru/i, '#e7e0d1'], [/khaki/i, '#66624a'], [/grey/i, '#8d8c88'],
+  [/blue/i, '#5d6f8a'], [/red/i, '#962920'], [/navy/i, '#212739'], [/black/i, '#151515'],
+];
+const toneFor = (c: string) => (TONES.find(([r]) => r.test(c)) || [null, '#999'])[1] as string;
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+
+const RAW: [string, string, number, Cat, string, 1 | 2, boolean?][] = [
+  ['Els Mules', 'Brown Leather', 250, 'shoes', 'Mules', 1],
+  ['Ripley Cardigan', 'Black Knit Fur', 530, 'clothing', 'Knitwear', 1],
+  ['Brunildha Boots', 'Black Leather', 350, 'shoes', 'Boots', 1, true],
+  ['Ofelia Jacket', 'Brown Cotton', 795, 'clothing', 'Jackets', 1],
+  ['Sabryna Boots', 'Brown Grey Brush Off Leather', 365, 'shoes', 'Boots', 1],
+  ['Wirth Scarf', 'Red Viscose Knit', 175, 'accessories', 'Scarves', 1],
+  ['Licia Boots', 'Black Leather', 380, 'shoes', 'Boots', 1],
+  ['Yoko Jumper', 'Brown Extra Fine Merino Knit', 340, 'clothing', 'Knitwear', 1],
+  ['Cobie Loafers', 'Black Burgundy Leather Derby', 300, 'shoes', 'Loafers', 1],
+  ['Kara Trousers', 'Grey Pleated Virgin Wool', 495, 'clothing', 'Trousers', 1],
+  ['Lucy Boots', 'Black Leather', 530, 'shoes', 'Boots', 1, true],
+  ['Ripley Cardigan', 'Ecru Knit Fur', 530, 'clothing', 'Knitwear', 1],
+  ['Araxi Boots', 'Black Leather', 460, 'shoes', 'Boots', 1, true],
+  ['Sibuca Jeans', 'Blue Lyocell Denim', 355, 'clothing', 'Denim', 1],
+  ['Shana Boots', 'Black Stretch Nappa Leather', 580, 'shoes', 'Boots', 1],
+  ['Ofelia Jacket', 'Dark Khaki Cotton', 795, 'clothing', 'Jackets', 1],
+  ['Brunildha Boots', 'Burgundy Shiny Leather', 350, 'shoes', 'Boots', 2, true],
+  ['Ville Dress', 'Black Viscose Knit', 465, 'clothing', 'Dresses', 2],
+  ['Izolda Boots', 'Black Leather', 445, 'shoes', 'Boots', 2],
+  ['Ville Dress', 'Grey Viscose Knit', 465, 'clothing', 'Dresses', 2],
+  ['Paola Boots', 'Black Leather', 365, 'shoes', 'Boots', 2],
+  ['Mona Balaclava', 'Black Navy Fine Alpaca Knit', 230, 'accessories', 'Headwear', 2],
+  ['Alida Boots', 'Black Leather', 400, 'shoes', 'Boots', 2],
+  ['Yayoi Dress', 'Black Extra Fine Merino Knit', 415, 'clothing', 'Dresses', 2],
+  ['Araxi Boots', 'Brown Brush Off Leather', 460, 'shoes', 'Boots', 2, true],
+  ['Yayoi Dress', 'Brown Extra Fine Merino Knit', 415, 'clothing', 'Dresses', 2],
+  ['Saura Boots', 'Dark Brown Leather', 470, 'shoes', 'Boots', 2],
+  ['Jessie Scarf', 'Black Nappa Leather', 130, 'accessories', 'Scarves', 2],
+  ['Dagmara Boots', 'Burgundy Brush Off Leather', 300, 'shoes', 'Boots', 2],
+  ['Agnes Jacket', 'Burgundy Extra Fine Merino Knit', 565, 'clothing', 'Jackets', 2],
+];
+const PRODUCTS: Product[] = RAW.map(([name, colour, price, cat, type, row, icon]) => ({
+  id: slug(name + ' ' + colour), name, colour, price, cat, type, row, tone: toneFor(colour), icon: !!icon,
+}));
+const P = (id: string) => PRODUCTS.find(p => p.id === id)!;
+
+/* ---------- Original Miista imagery (cdn.sanity.io) ---------- */
+const CDN = 'https://cdn.sanity.io/images/mq16w1ud/production/';
+const mi = (id: string, w = 1400) => CDN + id.replace('~', '-2560x') + `?auto=format&fit=max&w=${w}&q=80`;
+const GALLERY: Record<string, string[]> = {
+  'els-mules-brown-leather': ['1a95f8f80a34e848bf75451568b0da582dc3d772~3840.jpg','d485dc4265f6758bc14e2c842b9228845415f834~3840.jpg','73e4bb1fe46b037c5a1b92bae15edb640e9f1585~3840.jpg'],
+  'ripley-cardigan-black-knit-fur': ['7bbc1b297db30ca9cb62a3886f11f22e72444896~3838.jpg','18a116f29f35eb3983bc6085c8ab0276ed5be52e~3838.jpg'],
+  'brunildha-boots-black-leather': ['d154daabb18df046f5f02137ba90594547049390~3840.jpg','62cca21d38324eaa63f3d2a0cd4f981202040c8c~3840.jpg','0f1a21df390072c733d02d1b27ceaff30857c483~3840.jpg'],
+  'ofelia-jacket-brown-cotton': ['c82271260647a7dd1060fcbe54fe207e40c15811~3838.jpg','1e242294af654a4dd2a1c5a9fa3067827554de1b~3838.jpg'],
+  'sabryna-boots-brown-grey-brush-off-leather': ['fb0c1a01be5edb590c3f3c990f9aad8a8b892f0f~3840.jpg','05a04e8bd85be79a5b513dc1852a14919a42e95a~3840.jpg','efc708a4e0cc27cada8b53340c3a1a761f8e6da3~3840.jpg'],
+  'wirth-scarf-red-viscose-knit': ['09c0dfcf0b609d75bbac21e8164ccf18d752fef1~3838.jpg','2cea730ba288be9c392259145041091d2885bca2~3838.jpg'],
+  'licia-boots-black-leather': ['f6d207a9006b9e1cb4455c592a3f4c79fd3690d3~3840.jpg','6ac51a69e6753c121264092103c7a589add45037~3840.jpg'],
+  'yoko-jumper-brown-extra-fine-merino-knit': ['fdb964f09bd13fb192678d29ffcceda3d6fe5275~3838.jpg','609482194521d4d207ecc676c69ced16390e3494~3838.jpg','626678ab26cdce31897a9dd9d7661808e76b2b4e~3838.jpg'],
+  'cobie-loafers-black-burgundy-leather-derby': ['8c9f763bb0497bc99ed98ba70eed54e4aef2aed5~3840.jpg','062e38d152915b7b7741ca730de728bf9c5852a4~3838.jpg','0b88c0b1c90246121f943ae6d28057d0fa6f5802~3839.jpg'],
+  'kara-trousers-grey-pleated-virgin-wool': ['d6845c2aaae561629f82568d04985e235c1f3199~3838.jpg','fff25ad1bbe9285b557a2f037b60b3c6defaf015~3838.jpg'],
+  'lucy-boots-black-leather': ['adc3a88d8be1d81fec9a540029035de180f35544~3840.jpg','4a83ba79bde590a7b6c2b3345b614574dcf94c63~3840.jpg','10cf9b8bf30f51038af91a60fc6c49833f4f7291~3840.jpg'],
+  'ripley-cardigan-ecru-knit-fur': ['536575a2a7b1f71a6d62e4048e1b995c280fcdb0~3840.jpg','df5758eacc9473ad8d9f9f64ca6eba434cef79ad~3840.jpg'],
+  'araxi-boots-black-leather': ['5cb768c3d30dd46b36595a90ed5309905537af04~3840.jpg','c89a48cfedee61c25c2c442320fde0931bd9f92b~3840.jpg','133126bb0a45c2a13d0a8c707738a4549a9e8db2~3840.jpg'],
+  'sibuca-jeans-blue-lyocell-denim': ['abef0703366e91313a043ac09c843cdc9fe48373~3840.jpg','eec712daf9dccc7922e038b57c4f43906bd8e765~3840.jpg'],
+  'shana-boots-black-stretch-nappa-leather': ['d325c8aeae17d1526161b004a76494a88feec55b~3840.jpg','c14bb0995849a81c05aeef0000c68aaff3d3fd9e~3840.jpg'],
+  'ofelia-jacket-dark-khaki-cotton': ['dc121fb2c417ea4c33ca76dffbdc7e08c5dde80e~3840.jpg','60be80d9663ba84f5cac40bd65caf1f59dbf88c6~3839.jpg'],
+  'brunildha-boots-burgundy-shiny-leather': ['3c0454f86b460386fb4ae7c65435b6c6a649540b~3840.jpg','a0c826f1e421729d13b0a91195f7822effff024b~3838.jpg','ca2c200bd41abd3042f81c0a6b8d47adf0fe6b35~3838.jpg'],
+  'ville-dress-black-viscose-knit': ['01d809ff5a37584f6e8ca53e5dbd575f431601c0~3838.jpg','7698915521e435fbdbb7dd549f2414969cdb1ed3~3838.jpg'],
+  'izolda-boots-black-leather': ['aec3e5e8d8e6264d643a9cc5a87cfbd1c740076d~3840.jpg','35e58ec7ea806d98fa6a4b1528d30c252501b62e~3840.jpg','dfbe0fc9a136972ea5cf1097002f718dad5f6911~3840.jpg'],
+  'ville-dress-grey-viscose-knit': ['82fca3612a644248fdb14e8371ba8c9b367559b0~3841.jpg','02d93e77939b8d531657b4e7fb1bfb34c40f5b57~3840.jpg'],
+  'paola-boots-black-leather': ['bca4e695b9aa475e6c8ab5b2a68a23d85f4839f7~3840.jpg','5831c70b79dbc951af87993c5c02f594ab79bcee~3840.jpg'],
+  'mona-balaclava-black-navy-fine-alpaca-knit': ['66220e299507230b3932d276bad371bd7f22b29c~3840.jpg','708c3724a9809b3f87dc527798b5ae52cb42ca2a~3840.jpg'],
+  'alida-boots-black-leather': ['8ca0a8c5e2638d3f9e89464e7a13e409823eb8d2~3840.jpg','7a9e16fe72c71099d74051044adc49f8b912005d~3838.jpg','e00413fc08a9842ff7b925eeb8693a35c118f095~3838.jpg'],
+  'yayoi-dress-black-extra-fine-merino-knit': ['64098a2fd35996d3fb1aae945c8bec971af86904~3840.jpg','800b36e3d3bb0602a89728916ef4e4ce472da6ec~3841.jpg'],
+  'araxi-boots-brown-brush-off-leather': ['a249b6b5e11d8eb1950f8a6c7b38d808a7792df5~3840.jpg','29540676f12b9397816f7ca87606f617ae951d54~3838.jpg','8f3f3968a3aa8bccc8b683b76f0cfe75677ee111~3839.jpg'],
+  'yayoi-dress-brown-extra-fine-merino-knit': ['7c49b8be9c53d4d22a1209199561728c4ec4914d~3838.jpg','54575c6c0af3e4aa8f511568fb85804a6014f4ac~3838.jpg'],
+  'saura-boots-dark-brown-leather': ['6a337ddc8046a4089662545d02e18027cd6d21cd~3840.jpg','81c0aecd00f81751ca4b31d7b93caaddba32028b~3840.jpg','861e81d845b8f60f4928025ddafbe794adc7ef15~3840.jpg'],
+  'jessie-scarf-black-nappa-leather': ['3407509551ba042bcbf720285bd63a167574d3cf~3838.jpg','5c832d7725c6144413c1242929fa19725535f545~3838.jpg'],
+  'dagmara-boots-burgundy-brush-off-leather': ['503d6d982abe5227838954011b35e45a926ce753~3840.jpg','6ec127604af33842e9d1304c987c7e05de92a27b~3840.jpg'],
+  'agnes-jacket-burgundy-extra-fine-merino-knit': ['6d3fa6b1b3634e0cb22ea1f869191dddba62fe9a~3838.jpg','dc2112e8424e48299923f494c2890c03246ace1f~3838.jpg','04e37bd33318c755a67a13359734ed6b222c6573~3838.jpg'],
+};
+/* Campaign / editorial imagery from the miista.com homepage */
+const ED = {
+  newIn: CDN + '3ebe10295cee357181d6bb443aab5748186b84f3-1280x1920.png?auto=format&w=1400&q=80',
+  shoes: mi('53761e0a2fa7b05784a8c35f5ce7069422aedf8c~3840.jpg'),
+  shoes2: mi('7a9e16fe72c71099d74051044adc49f8b912005d~3838.jpg'),
+  clothing: mi('fa33c7ffd9e9f94ef406f056d36f05b2230541e2~3838.jpg'),
+  accessories: mi('2cea730ba288be9c392259145041091d2885bca2~3838.jpg'),
+  accessories2: mi('769861627db338b0fede93aa072f3d29ca29b680~3838.jpg'),
+  icons: CDN + 'a58d8d5e3b2c68105d6407dc838dec1c56904c4e-852x1210.jpg?auto=format&w=1200&q=80',
+  e8: mi('b3e407107d32a9dd28675929a1ee51e56e5cdac4~3840.jpg'),
+  vines: CDN + '8ccda93febbcc1f6755cea6c352e0c37dba23966-4285x2856.jpg?auto=format&w=2400&q=80',
+  postcard: CDN + '8621b64bf5f0005f91a0a63391ecc60ec11e35aa-4284x2856.jpg?auto=format&w=2400&q=80',
+  gudet: CDN + '74e9a8ab5c87b2b3d37d2ac800137114ee4dc10f-4000x3000.jpg?auto=format&w=2400&q=80',
+  corner: mi('18c792abc867f99595a357d6c962bc989b1be7ab~3840.jpg'),
+};
+const G = (id: string, i = 0, w?: number) => { const g = GALLERY[id]; return g ? mi(g[Math.min(i, g.length - 1)], w) : ''; };
+
+/* Slot → image. Product slots are filled automatically from GALLERY. */
+const IMAGE_SOURCES: Record<string, string> = {
+  'tile-new-in': ED.newIn, 'tile-shoes': ED.shoes, 'tile-clothing': ED.clothing, 'tile-accessories': ED.accessories, 'tile-icons': ED.icons,
+  'feature-repair': G('alida-boots-black-leather', 1, 2000),
+  'feature-preowned': G('araxi-boots-brown-brush-off-leather', 2, 2000),
+  'feature-scrap': G('saura-boots-dark-brown-leather', 2, 2000),
+  'hero-repair': ED.shoes2, 'hero-preowned': ED.e8, 'hero-scrap': ED.vines, 'hero-practices': ED.corner,
+  'story-a-day-amongst-the-vines': ED.vines, 'story-connecting-a-friend': ED.postcard, 'story-anything-but-neutral': ED.gudet,
+  'story-continuing-the-story': ED.shoes,
+  'repair-detail-1': G('licia-boots-black-leather', 1), 'repair-detail-2': G('cobie-loafers-black-burgundy-leather-derby', 1), 'repair-detail-3': G('paola-boots-black-leather', 1),
+  'mat-leather': G('dagmara-boots-burgundy-brush-off-leather', 1), 'mat-rubber': G('cobie-loafers-black-burgundy-leather-derby', 2), 'mat-other': G('mona-balaclava-black-navy-fine-alpaca-knit', 1),
+  'material-leather': G('saura-boots-dark-brown-leather', 1), 'material-recycled-wool': G('kara-trousers-grey-pleated-virgin-wool', 1),
+  'material-recycled-cotton': G('ofelia-jacket-brown-cotton', 1), 'material-organic-cotton': G('ofelia-jacket-dark-khaki-cotton', 1),
+  'material-tencel-lyocell': G('sibuca-jeans-blue-lyocell-denim', 0), 'material-denim-finishing': G('sibuca-jeans-blue-lyocell-denim', 1),
+  'material-recycled-rubber': G('els-mules-brown-leather', 2),
+};
+
+/* product slots: '<id>' = first image, '<id>-n' = nth image; pre-owned listings reuse the model's photography */
+PRODUCTS.forEach(p => (GALLERY[p.id] || []).forEach((_, i) => { IMAGE_SOURCES[i ? `${p.id}-${i + 1}` : p.id] = G(p.id, i); }));
+
+
+/* Illustrative resale stock — NOT real Miista inventory */
+const PRE_OWNED: PreOwned[] = [
+  { id: 'po-01', productId: 'araxi-boots-black-leather', size: 38, condition: 'Excellent', price: 295, imperfections: 'Faint creasing across the vamp. No marks on the shaft.', restoration: 'Cleaned, conditioned and re-polished. Heel tips checked.' },
+  { id: 'po-02', productId: 'brunildha-boots-black-leather', size: 37, condition: 'Very Good', price: 215, imperfections: 'Light scuffing at the toe; slight wear to the sole edge.', restoration: 'Toe colour restored, leather nourished, insole cleaned.' },
+  { id: 'po-03', productId: 'lucy-boots-black-leather', size: 39, condition: 'Good', price: 290, imperfections: 'Visible creasing at the ankle and a small mark on the inner shaft.', restoration: 'Heel top-piece replaced, leather conditioned, zip serviced.' },
+  { id: 'po-04', productId: 'els-mules-brown-leather', size: 40, condition: 'Excellent', price: 165, imperfections: 'Minimal wear to the footbed.', restoration: 'Footbed cleaned, leather balmed.' },
+  { id: 'po-05', productId: 'shana-boots-black-stretch-nappa-leather', size: 36, condition: 'Very Good', price: 360, imperfections: 'Soft creasing along the shaft, consistent with stretch nappa.', restoration: 'Cleaned and conditioned; stitching inspected.' },
+  { id: 'po-06', productId: 'cobie-loafers-black-burgundy-leather-derby', size: 41, condition: 'Good', price: 170, imperfections: 'Worn sole edges and light scratches on the burgundy panel.', restoration: 'Sole edges re-inked, half-sole protection added.' },
+  { id: 'po-07', productId: 'saura-boots-dark-brown-leather', size: 38, condition: 'Excellent', price: 310, imperfections: 'No visible marks. Worn indoors twice according to the previous owner.', restoration: 'Inspected and cleaned.' },
+  { id: 'po-08', productId: 'dagmara-boots-burgundy-brush-off-leather', size: 37, condition: 'Very Good', price: 185, imperfections: 'Natural brush-off patina deepened at the toe.', restoration: 'Brush-off finish refreshed, heel tips replaced.' },
+  { id: 'po-09', productId: 'izolda-boots-black-leather', size: 39, condition: 'Good', price: 245, imperfections: 'Scuffs at the heel counter and visible creasing.', restoration: 'Heel counter recoloured, lining cleaned.' },
+  { id: 'po-10', productId: 'sabryna-boots-brown-grey-brush-off-leather', size: 40, condition: 'Excellent', price: 240, imperfections: 'Minimal wear to the outsole.', restoration: 'Cleaned and nourished.' },
+];
+PRE_OWNED.forEach(po => (GALLERY[po.productId] || []).forEach((_, i) => { IMAGE_SOURCES[i ? `po-${po.id}-${i + 1}` : 'po-' + po.id] = G(po.productId, (i + 1) % GALLERY[po.productId].length); }));
+const CONDITIONS: { name: Condition; text: string }[] = [
+  { name: 'Excellent', text: 'Minimal signs of wear, professionally inspected and restored where needed.' },
+  { name: 'Very Good', text: 'Light signs of previous use, cleaned and checked for continued wear.' },
+  { name: 'Good', text: 'Visible signs of wear, assessed and repaired where appropriate.' },
+];
+
+/* Store locations: Barcelona & New York addresses from public sources.
+   London & Paris addresses to be verified. Programme participation is illustrative. */
+const STORES: Store[] = [
+  { id: 'london', city: 'London', country: 'United Kingdom', address: 'Address pending verification', verified: false, x: 41, y: 33 },
+  { id: 'paris', city: 'Paris', country: 'France', address: 'Address pending verification', verified: false, x: 46, y: 45 },
+  { id: 'barcelona', city: 'Barcelona', country: 'Spain', address: "Av. del Marquès de l'Argentera, 1, 08003 Barcelona", verified: true, x: 45, y: 70 },
+  { id: 'new-york', city: 'New York', country: 'United States', address: '69 Orchard St, New York, NY 10002', verified: true, x: 10, y: 48 },
+];
+
+const STORIES = [
+  { id: 'a-day-amongst-the-vines', kicker: 'Taking the time it takes to grow', title: 'A Day Amongst the Vines', text: 'A September trip from Paris to Pépin Winemakers in Alsace, spent among the vines with a small group of creatives.', tone: '#4b4a36' },
+  { id: 'connecting-a-friend', kicker: 'Connecting a friend', title: 'Send a Postcard', text: 'Postcards from our stores, sent to a friend with a gift towards their next pair.', tone: '#7b2c26' },
+  { id: 'anything-but-neutral', kicker: 'Anything but neutral', title: 'A collaboration with Pauline Gudet', text: 'Playing with postural possibilities alongside artist Pauline Gudet.', tone: '#2a2a2a' },
+];
+
+const SHOE_SIZES = ['35', '36', '37', '38', '39', '40', '41', '42'];
+const CLOTH_SIZES = ['XS', 'S', 'M', 'L'];
+const sizesFor = (p: Product) => (p.cat === 'shoes' ? SHOE_SIZES : p.cat === 'clothing' ? CLOTH_SIZES : ['One Size']);
+const eur = (n: number) => '€' + n.toLocaleString('en-GB');
+const refNo = (prefix: string) => prefix + '-' + Math.random().toString(36).slice(2, 7).toUpperCase() + '-DEMO';
+
+/* --------------------------- Persistence --------------------------- */
+const store = {
+  get<T>(k: string, d: T): T { try { const v = localStorage.getItem('miista-proto:' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k: string, v: unknown) { try { localStorage.setItem('miista-proto:' + k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+};
+
+/* ------------------------------ Router ------------------------------ */
+function useHashRoute() {
+  const read = () => (location.hash.replace(/^#/, '') || '/');
+  const [route, setRoute] = useState(read());
+  useEffect(() => {
+    const on = () => { setRoute(read()); window.scrollTo({ top: 0 }); };
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  return route;
+}
+const go = (to: string) => { location.hash = to; };
+function L({ to, className = '', children, onClick, ...rest }: any) {
+  return <a href={'#' + to} className={className} onClick={onClick} {...rest}>{children}</a>;
+}
+
+/* ------------------------------ App state ------------------------------ */
+type Ctx = {
+  bag: BagItem[]; addToBag: (i: Omit<BagItem, 'qty' | 'key'>) => boolean; removeFromBag: (k: string) => void;
+  setQty: (k: string, q: number) => void; clearBag: () => void;
+  bagOpen: boolean; setBagOpen: (b: boolean) => void;
+  wish: string[]; toggleWish: (id: string) => void;
+  images: Record<string, string>; setImage: (k: string, v: string | null) => void;
+  imageMode: boolean; setImageMode: (b: boolean) => void;
+  toast: (m: string) => void;
+};
+const AppCtx = createContext<Ctx>(null as any);
+const useApp = () => useContext(AppCtx);
+
+/* =============================== UI PRIMITIVES =============================== */
+
+function Photo({ slot, tone = '#d9d6cf', ratio = 'aspect-[3/4]', label, className = '', children, hover, eager = false }:
+  { slot: string; tone?: string; ratio?: string; label?: string; className?: string; children?: any; hover?: string; eager?: boolean }) {
+  const { images, setImage, imageMode } = useApp();
+  const [over, setOver] = useState(false);
+  const src = images[slot] || IMAGE_SOURCES[slot];
+  const hoverSrc = hover && (images[hover] || IMAGE_SOURCES[hover]);
+  const [loaded, setLoaded] = useState(false);
+  const light = parseInt(tone.slice(1), 16) > 0x999999;
+  const onFile = (f?: File) => {
+    if (!f || !f.type.startsWith('image/')) return;
+    const r = new FileReader(); r.onload = () => setImage(slot, String(r.result)); r.readAsDataURL(f);
+  };
+  return (
+    <div
+      className={`relative overflow-hidden ${ratio} ${className}`}
+      style={{ background: src ? '#f2f2f2' : tone }}
+      onDragOver={e => { if (imageMode) { e.preventDefault(); setOver(true); } }}
+      onDragLeave={() => setOver(false)}
+      onDrop={e => { if (!imageMode) return; e.preventDefault(); setOver(false); onFile(e.dataTransfer.files[0]); }}
+    >
+      {src ? (
+        <>
+          <img src={src} alt={label || ''} loading={eager ? 'eager' : 'lazy'} decoding="async" onLoad={() => setLoaded(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`} />
+          {hoverSrc && <img src={hoverSrc} alt="" loading="lazy" decoding="async" className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-300" />}
+        </>
+      ) : (
+        <>
+          <div className="absolute inset-0 grain" />
+          <div className="absolute inset-0" style={{ background: `radial-gradient(120% 80% at 30% 20%, rgba(255,255,255,${light ? .25 : .10}), transparent 60%)` }} />
+          <div className={`absolute left-3 bottom-3 right-3 text-[9px] uppercase tracking-mi ${light ? 'text-black/45' : 'text-white/45'}`}>
+            Image placeholder{label ? ' · ' + label : ''}
+          </div>
+        </>
+      )}
+      {children}
+      {imageMode && (
+        <label className={`absolute top-2 right-2 z-20 cap bg-white text-black px-2 py-1 cursor-pointer ${over ? 'ring-1 ring-black' : ''}`} onClick={e => e.stopPropagation()}>
+          {src ? 'Replace' : 'Drop / add image'}
+          <input type="file" accept="image/*" className="hidden" onChange={e => onFile(e.target.files?.[0] || undefined)} />
+          {images[slot] && <button className="ml-2 underline" onClick={e => { e.preventDefault(); setImage(slot, null); }}>Remove</button>}
+        </label>
+      )}
+    </div>
+  );
+}
+
+function Tag({ children, dark = false }: any) {
+  return <span className={`inline-block cap !text-[9px] px-1.5 py-0.5 border ${dark ? 'border-white/70 text-white' : 'border-black'}`}>{children}</span>;
+}
+
+function Accordion({ title, children, open: init = false, id }: any) {
+  const [open, setOpen] = useState(init);
+  return (
+    <div className="border-t border-black">
+      <button className="w-full flex justify-between items-center py-3 cap text-left" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        <span>{title}</span><span aria-hidden>{open ? '−' : '+'}</span>
+      </button>
+      {open && <div id={id} className="pb-5 fade">{children}</div>}
+    </div>
+  );
+}
+
+function SectionHead({ kicker, title, right }: any) {
+  return (
+    <div className="flex items-end justify-between px-4 md:px-6 pt-14 pb-4">
+      <div>{kicker && <div className="cap text-black/50 mb-1">{kicker}</div>}<h2 className="cap !text-[13px]">{title}</h2></div>
+      {right}
+    </div>
+  );
+}
+
+/* ================================ HEADER ================================ */
+
+const SHOP_NAV = [
+  { to: '/shop/new-in', label: 'New In' }, { to: '/shop/shoes', label: 'Shoes' },
+  { to: '/shop/clothing', label: 'Clothing' }, { to: '/shop/accessories', label: 'Accessories' },
+  { to: '/shop/icons', label: 'Icons' }, { to: '/pre-owned', label: 'Pre-Owned' },
+];
+const ABOUT_NAV = [
+  { to: '/stories', label: 'Stories' }, { to: '/keep-the-story-going', label: 'Keep the Story Going' },
+  { to: '/miista-x-scrap', label: 'Miista × SCRAP' }, { to: '/our-practices', label: 'Our Practices' },
+  { to: '/stores', label: 'Stores' },
+];
+const HELP_NAV = [
+  { to: '/product-care', label: 'Product Care' }, { to: '/keep-the-story-going#form', label: 'Repairs' },
+  { to: '/shipping', label: 'Shipping' }, { to: '/returns', label: 'Returns' },
+  { to: '/faqs', label: 'FAQs' }, { to: '/contact', label: 'Contact Us' },
+];
+
+function Wordmark({ className = '' }) {
+  // Original Miista logotype (SVG as served on miista.com), unaltered.
+  return (
+    <svg fill="none" viewBox="0 0 59 8" xmlns="http://www.w3.org/2000/svg" aria-label="Miista logo" className={`block w-auto ${className}`}>
+      <title>Miista</title>
+      <path fill="currentColor" d="M.905.502H0v7.005h.905V2.033l2.577 3.883 2.576-3.895v5.486h.905V.502h-.875l-2.59 3.913L.905.502ZM14.268.502v7.005h.904V.502h-.904ZM22.656.502v7.005h.905V.502h-.905ZM34.35 5.717c0 .19-.042.35-.117.489-.086.139-.184.25-.312.341a1.2 1.2 0 0 1-.452.211 1.8 1.8 0 0 1-.518.07c-.217 0-.41-.03-.584-.09a1.614 1.614 0 0 1-.465-.242 1.893 1.893 0 0 1-.368-.342 1.873 1.873 0 0 1-.249-.41l-.754.42c.085.18.194.359.345.54.14.181.31.33.517.471.194.139.433.25.692.33.26.08.551.12.876.12.324 0 .626-.04.904-.13.282-.09.528-.22.745-.39.203-.168.367-.38.485-.621.118-.242.183-.52.183-.83 0-.26-.042-.48-.127-.68a1.757 1.757 0 0 0-.378-.52 2.903 2.903 0 0 0-.593-.42 8.805 8.805 0 0 0-.777-.38 9.229 9.229 0 0 1-.701-.31c-.217-.1-.387-.2-.528-.312-.151-.1-.26-.22-.335-.341a.749.749 0 0 1-.118-.44.991.991 0 0 1 .325-.74c.108-.1.236-.182.387-.242.15-.06.334-.09.55-.09a1.908 1.908 0 0 1 1.23.467c.098.09.184.181.249.26l.679-.51a3.145 3.145 0 0 0-.335-.35 3.102 3.102 0 0 0-.475-.33 2.75 2.75 0 0 0-.616-.241 2.86 2.86 0 0 0-.735-.1c-.367 0-.678.06-.95.17-.27.12-.496.259-.67.44-.183.181-.324.39-.41.622-.098.23-.14.459-.14.691 0 .281.052.532.184.74.117.212.281.39.475.55.193.16.42.299.669.42.249.12.495.241.744.34.206.1.4.191.583.27.174.081.335.18.466.28.128.1.226.22.302.35a.972.972 0 0 1 .118.469ZM43.554 1.302v6.205h.905V1.302h2.167v-.8h-5.242v.8h2.17ZM54.347 4.817l1.295-3.113 1.295 3.113h-2.59Zm.876-4.315-2.967 7.005h.97l.787-1.893h3.259l.787 1.893h.95L56.065.502h-.842Z" />
+    </svg>
+  );
+}
+
+function Header({ route }: { route: string }) {
+  const { bag, setBagOpen, wish } = useApp();
+  const [menu, setMenu] = useState(false);
+  const [drop, setDrop] = useState<null | 'about' | 'help'>(null);
+  const [search, setSearch] = useState(false);
+  const count = bag.reduce((n, i) => n + i.qty, 0);
+  useEffect(() => { setMenu(false); setDrop(null); setSearch(false); }, [route]);
+  const active = (to: string) => route === to || (to !== '/' && route.startsWith(to));
+
+  return (
+    <header className="sticky top-0 z-40 bg-white">
+      <div className="h-12 md:h-14 px-4 md:px-6 grid grid-cols-[1fr_auto_1fr] items-center border-b border-black/10" onMouseLeave={() => setDrop(null)}>
+        {/* left */}
+        <nav className="hidden lg:flex gap-5 cap" aria-label="Shop">
+          {SHOP_NAV.map(n => <L key={n.to} to={n.to} className={`ulink ${active(n.to) ? 'on' : ''}`}>{n.label}</L>)}
+        </nav>
+        <button className="lg:hidden cap justify-self-start" onClick={() => setMenu(true)} aria-label="Open menu">Menu</button>
+        {/* centre */}
+        <L to="/" aria-label="Miista home"><Wordmark className="h-[9px] md:h-[10px]" /></L>
+        {/* right */}
+        <div className="flex gap-5 cap justify-self-end items-center">
+          <button className="hidden lg:inline ulink" onClick={() => setSearch(s => !s)}>Search</button>
+          <button className="hidden lg:inline ulink" onMouseEnter={() => setDrop('about')} onClick={() => setDrop(drop === 'about' ? null : 'about')} aria-expanded={drop === 'about'}>About</button>
+          <button className="hidden lg:inline ulink" onMouseEnter={() => setDrop('help')} onClick={() => setDrop(drop === 'help' ? null : 'help')} aria-expanded={drop === 'help'}>Help</button>
+          <L to="/account" className="hidden lg:inline ulink">Account</L>
+          <L to="/wishlist" className="hidden md:inline ulink">Wishlist{wish.length ? ` (${wish.length})` : ''}</L>
+          <button className="ulink" onClick={() => setBagOpen(true)}>Bag ({count})</button>
+        </div>
+        {drop && (
+          <div className="absolute left-0 right-0 top-full bg-white border-b border-black/10 fade hidden lg:block" onMouseEnter={() => setDrop(drop)}>
+            <div className="px-6 py-6 flex justify-end gap-10">
+              <ul className="space-y-2 cap min-w-[220px]">
+                {(drop === 'about' ? ABOUT_NAV : HELP_NAV).map(n => <li key={n.to}><L to={n.to} className="ulink">{n.label}</L></li>)}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+      {search && <SearchBar onClose={() => setSearch(false)} />}
+
+      {/* Mobile menu */}
+      {menu && (
+        <div className="fixed inset-0 z-50 bg-white fade overflow-y-auto" role="dialog" aria-label="Menu">
+          <div className="h-12 px-4 grid grid-cols-[1fr_auto_1fr] items-center border-b border-black/10">
+            <button className="cap justify-self-start" onClick={() => setMenu(false)}>Close</button>
+            <Wordmark className="h-[9px]" /><span />
+          </div>
+          <div className="px-4 py-6">
+            <SearchBar inline onClose={() => setMenu(false)} />
+            <ul className="mt-6 space-y-3 text-[22px] leading-tight">
+              {SHOP_NAV.map(n => <li key={n.to}><L to={n.to}>{n.label}</L></li>)}
+            </ul>
+            <div className="cap text-black/50 mt-10 mb-3">About</div>
+            <ul className="space-y-2 cap">{ABOUT_NAV.map(n => <li key={n.to}><L to={n.to}>{n.label}</L></li>)}</ul>
+            <div className="cap text-black/50 mt-8 mb-3">Help</div>
+            <ul className="space-y-2 cap">{HELP_NAV.map(n => <li key={n.to}><L to={n.to}>{n.label}</L></li>)}</ul>
+            <div className="mt-8 flex gap-5 cap"><L to="/account">Account</L><L to="/wishlist">Wishlist</L></div>
+          </div>
+        </div>
+      )}
+    </header>
+  );
+}
+
+function SearchBar({ onClose, inline = false }: any) {
+  const [q, setQ] = useState('');
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (!inline) ref.current?.focus(); }, []);
+  const res = q.trim().length > 1 ? PRODUCTS.filter(p => (p.name + ' ' + p.colour + ' ' + p.type).toLowerCase().includes(q.toLowerCase())).slice(0, 8) : [];
+  return (
+    <div className={inline ? '' : 'border-b border-black/10 bg-white px-4 md:px-6 py-4 fade'}>
+      <div className="flex gap-4 items-center">
+        <input ref={ref} className="field" placeholder="Search" value={q} onChange={e => setQ(e.target.value)} aria-label="Search products" />
+        {!inline && <button className="cap" onClick={onClose}>Close</button>}
+      </div>
+      {res.length > 0 && (
+        <ul className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3">
+          {res.map(p => <li key={p.id}><L to={'/product/' + p.id} className="flex gap-3 items-center"><div className="w-12"><Photo slot={p.id} tone={p.tone} /></div><div><div>{p.name}</div><div className="text-black/50">{p.colour}</div></div></L></li>)}
+        </ul>
+      )}
+      {q.trim().length > 1 && res.length === 0 && <p className="mt-3 text-black/50">No results for “{q}”.</p>}
+    </div>
+  );
+}
+
+/* ================================ FOOTER ================================ */
+
+function Footer() {
+  const { imageMode, setImageMode } = useApp();
+  const [email, setEmail] = useState(''); const [done, setDone] = useState(false);
+  return (
+    <footer className="mt-24 border-t border-black/10 px-4 md:px-6 pt-10 pb-8">
+      <div className="grid md:grid-cols-4 gap-10">
+        <div className="md:col-span-2">
+          <div className="cap mb-3">Newsletter</div>
+          {done ? <p>Thank you. (Prototype — no email was collected.)</p> : (
+            <form className="flex gap-4 max-w-md" onSubmit={e => { e.preventDefault(); if (/\S+@\S+\.\S+/.test(email)) setDone(true); }}>
+              <input className="field" placeholder="Email address" value={email} onChange={e => setEmail(e.target.value)} aria-label="Email address" />
+              <button className="cap shrink-0">Subscribe</button>
+            </form>
+          )}
+        </div>
+        <ul className="space-y-2 cap">
+          <li><L to="/stores" className="ulink">Stores</L></li><li><L to="/product-care" className="ulink">Product Care</L></li>
+          <li><L to="/shipping" className="ulink">Shipping</L></li><li><L to="/returns" className="ulink">Returns</L></li>
+          <li><L to="/faqs" className="ulink">FAQs</L></li><li><L to="/privacy" className="ulink">Privacy Policy</L></li><li><L to="/contact" className="ulink">Contact Us</L></li>
+        </ul>
+        <ul className="space-y-2 cap">
+          <li><L to="/keep-the-story-going" className="ulink">Keep the Story Going</L></li>
+          <li><L to="/pre-owned" className="ulink">Pre-Owned</L></li>
+          <li><L to="/miista-x-scrap" className="ulink">Miista × SCRAP</L></li>
+          <li><L to="/our-practices" className="ulink">Our Practices</L></li>
+          <li className="pt-3 text-black/50">Currency: EUR</li>
+        </ul>
+      </div>
+      <div className="mt-14 flex flex-col md:flex-row md:items-end justify-between gap-4 cap">
+        <div className="flex gap-5"><span>Instagram</span><span>TikTok</span></div>
+        <div className="text-black/45 normal-case tracking-normal text-[11px] max-w-xl md:text-right">
+          Academic prototype for a university Fashion Futures project. Not affiliated with, endorsed by or operated by Miista.
+          Photography © Miista, shown via miista.com’s public image CDN. Circular services, resale stock and store participation are proposed and illustrative. No orders, payments or requests are processed.
+          {' '}<button className="underline" onClick={() => setImageMode(!imageMode)}>{imageMode ? 'Exit image mode' : 'Image mode'}</button>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ============================== PRODUCT UI ============================== */
+
+function ProductCard({ p, sub }: { p: Product; sub?: any }) {
+  const { wish, toggleWish } = useApp();
+  return (
+    <div className="group relative">
+      <L to={'/product/' + p.id} className="block">
+        <Photo slot={p.id} hover={p.id + '-2'} tone={p.tone} label={p.name} />
+        <div className="pt-2 pb-1 flex justify-between gap-2">
+          <div><div>{p.name}</div><div className="text-black/50">{p.colour}</div></div>
+          <div className="shrink-0">{sub ?? eur(p.price)}</div>
+        </div>
+      </L>
+      <button aria-label={wish.includes(p.id) ? 'Remove from wishlist' : 'Add to wishlist'} onClick={() => toggleWish(p.id)}
+        className="absolute top-2 left-2 text-[15px] opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity mix-blend-difference text-white">
+        {wish.includes(p.id) ? '♥' : '♡'}
+      </button>
+    </div>
+  );
+}
+
+function ProductGrid({ items }: { items: Product[] }) {
+  return <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 md:gap-x-3 gap-y-8 px-2 md:px-3">{items.map(p => <ProductCard key={p.id} p={p} />)}</div>;
+}
+
+function Carousel({ items }: { items: Product[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [prog, setProg] = useState(0);
+  const onScroll = () => { const el = ref.current!; setProg(el.scrollLeft / Math.max(1, el.scrollWidth - el.clientWidth)); };
+  const nudge = (d: number) => ref.current?.scrollBy({ left: d * ref.current.clientWidth * 0.8, behavior: 'smooth' });
+  return (
+    <div className="relative">
+      <div ref={ref} onScroll={onScroll} className="flex gap-2 md:gap-3 overflow-x-auto noscroll snap-x px-2 md:px-3">
+        {items.map(p => <div key={p.id} className="snap-start shrink-0 w-[46%] md:w-[24%] lg:w-[19%]"><ProductCard p={p} /></div>)}
+      </div>
+      <div className="px-4 md:px-6 mt-4 flex items-center gap-4">
+        <div className="h-px bg-black/15 flex-1 relative" aria-label={`Carousel progress of ${Math.round(prog * 100)}%`}>
+          <div className="absolute inset-y-0 left-0 bg-black" style={{ width: `${Math.max(8, prog * 100)}%` }} />
+        </div>
+        <button className="cap" onClick={() => nudge(-1)} aria-label="Previous">←</button>
+        <button className="cap" onClick={() => nudge(1)} aria-label="Next">→</button>
+      </div>
+    </div>
+  );
+}
+
+/* ================================ HOME ================================ */
+
+const CAT_TILES = [
+  { to: '/shop/new-in', label: 'New In', slot: 'tile-new-in', tone: '#2b2723' },
+  { to: '/shop/shoes', label: 'Shoes', slot: 'tile-shoes', tone: '#151515' },
+  { to: '/shop/clothing', label: 'Clothing', slot: 'tile-clothing', tone: '#6a4b37' },
+  { to: '/shop/accessories', label: 'Accessories', slot: 'tile-accessories', tone: '#962920' },
+  { to: '/shop/icons', label: 'Icons', slot: 'tile-icons', tone: '#5a1e24' },
+];
+
+function CategoryTiles() {
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-white">
+      {CAT_TILES.map((t, i) => (
+        <L key={t.to} to={t.to} className={`group block ${i === 0 ? 'col-span-2 md:col-span-1' : ''}`}>
+          <Photo slot={t.slot} tone={t.tone} ratio={i === 0 ? 'aspect-[4/5] md:aspect-[3/4]' : 'aspect-[3/4]'} label={t.label}>
+            <div className="absolute inset-x-0 bottom-0 p-3 md:p-4 text-white flex justify-between cap bg-gradient-to-t from-black/35 to-transparent">
+              <span>{t.label}</span><span className="ulink">Shop now</span>
+            </div>
+          </Photo>
+        </L>
+      ))}
+    </div>
+  );
+}
+
+function EditorialFeature({ n, kicker, title, line, cta, to, slot, tone, flip = false }: any) {
+  return (
+    <section className={`grid md:grid-cols-2 ${flip ? 'md:[&>*:first-child]:order-2' : ''}`}>
+      <L to={to} className="group block"><Photo slot={slot} tone={tone} ratio="aspect-[4/5] md:aspect-[1/1]" label={kicker} /></L>
+      <div className="flex flex-col justify-between p-4 md:p-6 lg:p-10 min-h-[260px]">
+        <div className="cap text-black/50">{n}</div>
+        <div>
+          <div className="cap mb-4">{kicker}</div>
+          <h3 className="text-[34px] md:text-[48px] leading-[0.95] tracking-[-0.02em] max-w-md">{title}</h3>
+          <p className="mt-4 max-w-sm text-black/70">{line}</p>
+          <L to={to} className="inline-block mt-6 cap ulink on">{cta}</L>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function StoryRow({ s }: any) {
+  return (
+    <L to={s.to || '/stories/' + s.id} className="group block">
+      <Photo slot={'story-' + s.id} tone={s.tone} ratio="aspect-[4/5]" label={s.title} />
+      <div className="pt-3 cap text-black/50">{s.kicker}</div>
+      <div className="mt-1 text-[17px] leading-tight">{s.title}</div>
+      <p className="mt-2 text-black/70 max-w-sm">{s.text}</p>
+      <div className="mt-3 cap ulink on inline-block">Read now</div>
+    </L>
+  );
+}
+
+function Home() {
+  return (
+    <div className="fade">
+      <CategoryTiles />
+      <SectionHead title="Discover AW26" right={<L to="/shop/new-in" className="cap ulink on">Shop now</L>} />
+      <Carousel items={PRODUCTS.filter(p => p.row === 1)} />
+
+      <div className="mt-20">
+        <EditorialFeature n="01" kicker="Keep the Story Going" title="Designed to be worn. Made to keep walking." line="A two-year repair guarantee for eligible footwear, requested online or in store."
+          cta="Explore repair" to="/keep-the-story-going" slot="feature-repair" tone="#3d2b20" />
+      </div>
+
+      <SectionHead title="Discover AW26" right={<L to="/shop/shoes" className="cap ulink on">Shop now</L>} />
+      <Carousel items={PRODUCTS.filter(p => p.row === 2)} />
+
+      <div className="mt-20 grid md:grid-cols-2 gap-px">
+        <L to="/pre-owned" className="group block">
+          <Photo slot="feature-preowned" tone="#151515" ratio="aspect-[4/5]" label="Miista Pre-Owned">
+            <div className="absolute inset-0 p-4 md:p-6 flex flex-col justify-between text-white bg-gradient-to-t from-black/45 via-transparent to-black/20">
+              <div className="cap">02 — Miista Pre-Owned</div>
+              <div><div className="text-[34px] md:text-[48px] leading-[0.95] tracking-[-0.02em]">Different owner.<br />Another story.</div><div className="mt-5 cap ulink on inline-block">Discover Pre-Owned</div></div>
+            </div>
+          </Photo>
+        </L>
+        <L to="/miista-x-scrap" className="group block">
+          <Photo slot="feature-scrap" tone="#8d8c88" ratio="aspect-[4/5]" label="Miista × SCRAP">
+            <div className="absolute inset-0 p-4 md:p-6 flex flex-col justify-between text-white bg-gradient-to-t from-black/45 via-transparent to-black/20">
+              <div className="cap">03 — Miista × SCRAP</div>
+              <div><div className="text-[34px] md:text-[48px] leading-[0.95] tracking-[-0.02em]">Beyond the<br />last step.</div><div className="mt-5 cap ulink on inline-block">Discover the initiative</div></div>
+            </div>
+          </Photo>
+        </L>
+      </div>
+
+      <SectionHead title="Stories" right={<L to="/stories" className="cap ulink on">View all stories</L>} />
+      <div className="grid md:grid-cols-3 gap-8 md:gap-3 px-2 md:px-3">{STORIES.map(s => <StoryRow key={s.id} s={s} />)}</div>
+    </div>
+  );
+}
+
+/* ============================== CATEGORY ============================== */
+
+const CAT_META: Record<string, { title: string; filter: (p: Product) => boolean; note?: string }> = {
+  'new-in': { title: 'New In', filter: () => true },
+  shoes: { title: 'Shoes', filter: p => p.cat === 'shoes' },
+  clothing: { title: 'Clothing', filter: p => p.cat === 'clothing' },
+  accessories: { title: 'Accessories', filter: p => p.cat === 'accessories' },
+  icons: { title: 'Icons', filter: p => !!p.icon, note: 'Prototype selection.' },
+};
+
+function Category({ cat }: { cat: string }) {
+  const meta = CAT_META[cat];
+  const [type, setType] = useState('All');
+  const [sort, setSort] = useState('featured');
+  if (!meta) return <NotFound />;
+  const base = PRODUCTS.filter(meta.filter);
+  const types = ['All', ...Array.from(new Set(base.map(p => p.type)))];
+  let items = base.filter(p => type === 'All' || p.type === type);
+  if (sort === 'low') items = [...items].sort((a, b) => a.price - b.price);
+  if (sort === 'high') items = [...items].sort((a, b) => b.price - a.price);
+  return (
+    <div className="fade">
+      <div className="px-4 md:px-6 pt-10 pb-6">
+        <h1 className="text-[34px] md:text-[48px] leading-none tracking-[-0.02em]">{meta.title}</h1>
+        {meta.note && <p className="text-black/50 mt-2">{meta.note}</p>}
+      </div>
+      <FilterBar types={types} type={type} setType={setType} sort={sort} setSort={setSort} count={items.length} />
+      {cat === 'shoes' && (
+        <L to="/pre-owned" className="mx-2 md:mx-3 mb-8 flex justify-between items-center border border-black px-4 py-3 cap hover:bg-black hover:text-white transition-colors">
+          <span>Also available: Miista Pre-Owned — restored footwear</span><span>→</span>
+        </L>
+      )}
+      <ProductGrid items={items} />
+    </div>
+  );
+}
+
+function FilterBar({ types, type, setType, sort, setSort, count, extra }: any) {
+  return (
+    <div className="sticky top-12 md:top-14 z-30 bg-white px-4 md:px-6 py-3 mb-6 border-y border-black/10 flex flex-wrap gap-x-5 gap-y-2 items-center cap">
+      {types.map((t: string) => <button key={t} onClick={() => setType(t)} className={`ulink ${type === t ? 'on' : ''}`} aria-pressed={type === t}>{t}</button>)}
+      {extra}
+      <span className="ml-auto text-black/50">{count} items</span>
+      <label className="flex items-center gap-2">Sort
+        <select className="bg-transparent cap outline-none" value={sort} onChange={e => setSort(e.target.value)}>
+          <option value="featured">Featured</option><option value="low">Price low–high</option><option value="high">Price high–low</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+/* ============================ PRODUCT DETAIL ============================ */
+
+function SizePicker({ sizes, value, onChange, unavailable = [] }: any) {
+  return (
+    <div role="radiogroup" aria-label="Size" className="flex flex-wrap gap-1.5">
+      {sizes.map((s: string) => {
+        const off = unavailable.includes(s);
+        return (
+          <button key={s} role="radio" aria-checked={value === s} disabled={off} onClick={() => onChange(s)}
+            className={`min-w-[44px] h-9 px-2 border text-[12px] ${value === s ? 'bg-black text-white border-black' : 'border-black/25 hover:border-black'} ${off ? 'line-through opacity-30 cursor-not-allowed' : ''}`}>
+            {s}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProductDetail({ id }: { id: string }) {
+  const p = PRODUCTS.find(x => x.id === id);
+  const { addToBag, toggleWish, wish } = useApp();
+  const [size, setSize] = useState('');
+  const [err, setErr] = useState('');
+  if (!p) return <NotFound />;
+  const sizes = sizesFor(p);
+  const unavailable = p.cat === 'shoes' ? [sizes[(p.price / 5) % sizes.length | 0]] : [];
+  const colourways = PRODUCTS.filter(x => x.name === p.name);
+  const preOwned = PRE_OWNED.filter(x => x.productId === p.id);
+  const add = () => {
+    if (!size && sizes.length > 1) { setErr('Please select a size'); return; }
+    setErr(''); addToBag({ kind: 'new', id: p.id, size: size || sizes[0] });
+  };
+  return (
+    <div className="fade">
+      <div className="grid lg:grid-cols-[1.5fr_1fr]">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-px">
+          {(GALLERY[p.id] || [0, 1]).map((_, i) => <Photo key={i} eager={i < 2} slot={i === 0 ? p.id : `${p.id}-${i + 1}`} tone={p.tone} label={`${p.name} · view ${i + 1}`} className={(GALLERY[p.id] || []).length === 3 && i === 2 ? 'md:col-span-2 md:aspect-[4/3]' : ''} />)}
+        </div>
+        <div className="px-4 md:px-6 lg:px-10 py-8 lg:sticky lg:top-14 lg:self-start">
+          <div className="cap text-black/50 mb-2"><L to={'/shop/' + p.cat} className="ulink">{CAT_META[p.cat].title}</L> / {p.type}</div>
+          <h1 className="text-[24px] leading-tight">{p.name}</h1>
+          <div className="text-black/60">{p.colour}</div>
+          <div className="mt-3">{eur(p.price)}</div>
+
+          {colourways.length > 1 && (
+            <div className="mt-6">
+              <div className="cap mb-2">Colour</div>
+              <div className="flex gap-2">{colourways.map(c => (
+                <L key={c.id} to={'/product/' + c.id} title={c.colour} aria-label={c.colour}
+                  className={`w-7 h-7 border ${c.id === p.id ? 'border-black ring-1 ring-black ring-offset-2' : 'border-black/20'}`} style={{ background: c.tone }} />
+              ))}</div>
+            </div>
+          )}
+
+          <div className="mt-6">
+            <div className="flex justify-between cap mb-2"><span>Size {p.cat === 'shoes' ? '(EU)' : ''}</span><span className="text-black/50">Size guide</span></div>
+            <SizePicker sizes={sizes} value={size} onChange={(s: string) => { setSize(s); setErr(''); }} unavailable={unavailable} />
+            {err && <div className="text-[#b00020] mt-2" role="alert">{err}</div>}
+          </div>
+          <div className="mt-6 flex gap-2">
+            <button className="btn flex-1" onClick={add}>Add to bag</button>
+            <button className="btn btn-o w-12 !px-0" onClick={() => toggleWish(p.id)} aria-label="Wishlist">{wish.includes(p.id) ? '♥' : '♡'}</button>
+          </div>
+
+          {p.cat === 'shoes' && <CircularStrip p={p} preOwned={preOwned} />}
+
+          <div className="mt-8">
+            <Accordion title="Description" open id="acc-desc">
+              <p className="text-black/75">{p.name} in {p.colour.toLowerCase()}. Designed in London and handmade in Europe. Full product description to be taken from miista.com.</p>
+            </Accordion>
+            <Accordion title="Details & Materials" id="acc-mat">
+              <p className="text-black/75">Main material (from product name): {p.colour}. Full composition: <em>information pending verification</em>.</p>
+            </Accordion>
+            <Accordion title="Product Care" id="acc-care"><CareList cat={p.cat} /></Accordion>
+            <Accordion title="Shipping & Returns" id="acc-ship"><p className="text-black/75">See <L to="/shipping" className="underline">Shipping</L> and <L to="/returns" className="underline">Returns</L>. Click & Collect at participating stores is shown as a proposed option at checkout.</p></Accordion>
+            {p.cat === 'shoes' && (
+              <Accordion title="Discover your product's story" id="acc-dpp" open>
+                <ProductPassport p={p} />
+              </Accordion>
+            )}
+            <div className="border-t border-black" />
+          </div>
+        </div>
+      </div>
+      <SectionHead title="You may also like" />
+      <Carousel items={PRODUCTS.filter(x => x.cat === p.cat && x.id !== p.id).slice(0, 10)} />
+    </div>
+  );
+}
+
+function CircularStrip({ p, preOwned }: { p: Product; preOwned: PreOwned[] }) {
+  return (
+    <div className="mt-8 grid grid-cols-3 border border-black text-[11px]">
+      <L to="/keep-the-story-going" className="p-3 border-r border-black hover:bg-black hover:text-white transition-colors">
+        <div className="cap">Repair</div><div className="mt-1 opacity-70">2-year repair guarantee*</div>
+      </L>
+      <L to={preOwned.length ? '/pre-owned/' + preOwned[0].id : '/pre-owned'} className="p-3 border-r border-black hover:bg-black hover:text-white transition-colors">
+        <div className="cap">Pre-Owned</div><div className="mt-1 opacity-70">{preOwned.length ? `${preOwned.length} restored pair available*` : 'Shop restored pairs'}</div>
+      </L>
+      <L to="/miista-x-scrap" className="p-3 hover:bg-black hover:text-white transition-colors">
+        <div className="cap">Next life</div><div className="mt-1 opacity-70">Return worn-out pairs*</div>
+      </L>
+      <div className="col-span-3 border-t border-black px-3 py-1.5 text-black/50">*Proposed service · prototype</div>
+    </div>
+  );
+}
+
+/* ========================= DIGITAL PRODUCT PASSPORT ========================= */
+
+function QR({ seed, size = 116 }: { seed: string; size?: number }) {
+  const N = 25;
+  let h = 2166136261; for (const c of seed) { h ^= c.charCodeAt(0); h = Math.imul(h, 16777619); }
+  const rnd = () => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; return ((h >>> 0) % 1000) / 1000; };
+  const finder = (x: number, y: number) => { for (const [fx, fy] of [[0, 0], [N - 7, 0], [0, N - 7]]) { const dx = x - fx, dy = y - fy; if (dx >= 0 && dx < 7 && dy >= 0 && dy < 7) return (dx === 0 || dx === 6 || dy === 0 || dy === 6 || (dx > 1 && dx < 5 && dy > 1 && dy < 5)) ? 1 : 0; } return -1; };
+  const cells: any[] = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const f = finder(x, y); const on = f === -1 ? rnd() > 0.52 : f === 1; if (on) cells.push(<rect key={x + '-' + y} x={x} y={y} width="1" height="1" />); }
+  return <svg viewBox={`-2 -2 ${N + 4} ${N + 4}`} width={size} height={size} role="img" aria-label="Prototype QR code — not scannable"><rect x="-2" y="-2" width={N + 4} height={N + 4} fill="#fff" /><g fill="#000">{cells}</g></svg>;
+}
+
+function ProductPassport({ p }: { p: Product }) {
+  const [step, setStep] = useState(0);
+  const PENDING = <em className="text-black/50 not-italic">Information pending verification</em>;
+  const steps = [
+    { k: 'Material', rows: [['Composition', <>{p.colour} (from product name). Full composition: {PENDING}</>], ['Material origin', PENDING], ['Recycled content', <>None claimed. {PENDING}</>]] },
+    { k: 'Supplier', rows: [['Tannery / mill', PENDING], ['Certifications', <>None claimed for this product. Proposed objective: LWG Gold-rated tanneries.</>]] },
+    { k: 'Production', rows: [['Made in', 'Handmade in Europe (brand statement)'], ['Facility', PENDING]] },
+    { k: 'Product', rows: [['Style', `${p.name} — ${p.colour}`], ['Product ID', <span className="font-mono text-[11px]">MI-{p.id.toUpperCase().slice(0, 18)}</span>]] },
+    { k: 'Care', rows: [['Care', 'Clean with a soft dry cloth, nourish leather regularly, store with shoe trees away from heat.'], ['Repair', <><L to="/keep-the-story-going" className="underline">Keep the Story Going</L> — 2-year repair guarantee (proposed)</>]] },
+    { k: 'Next Life', rows: [['Resell', <><L to="/pre-owned/sell" className="underline">Give your Miista a second story</L> — store credit after assessment (proposed)</>], ['End of life', <><L to="/miista-x-scrap" className="underline">Miista × SCRAP</L> collection (proposed concept)</>]] },
+  ];
+  return (
+    <div>
+      <div className="flex gap-5 items-start">
+        <div className="shrink-0 border border-black p-1"><QR seed={p.id} /></div>
+        <div className="text-[12px] text-black/70">
+          <div className="cap text-black mb-1">Digital Product Passport</div>
+          Prototype interface. Code is decorative and not scannable. Data marked “pending verification” has not been confirmed with Miista or its suppliers.
+          <div className="mt-2 text-black/50">Our research references the Emile Boots as an existing traceability example; this interface extends that idea to every style.</div>
+        </div>
+      </div>
+      <ol className="mt-6 flex items-center text-[10px] uppercase tracking-mi overflow-x-auto noscroll" aria-label="Product journey">
+        {steps.map((s, i) => (
+          <li key={s.k} className="flex items-center shrink-0">
+            <button onClick={() => setStep(i)} aria-current={step === i} className={`py-1 ${step === i ? 'border-b border-black' : 'text-black/40 hover:text-black'}`}>{s.k}</button>
+            {i < steps.length - 1 && <span className="mx-2 text-black/30">→</span>}
+          </li>
+        ))}
+      </ol>
+      <dl className="mt-4 border-t border-black/10 fade" key={step}>
+        {steps[step].rows.map(([k, v]: any) => (
+          <div key={k} className="grid grid-cols-[110px_1fr] gap-3 py-2 border-b border-black/10 text-[12px]"><dt className="text-black/50">{k}</dt><dd>{v}</dd></div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function CareList({ cat }: { cat: Cat }) {
+  const items = cat === 'shoes' ? [
+    'Wipe with a soft, dry cloth after wear. Avoid water and harsh detergents.',
+    'Nourish smooth leather with a neutral cream; brush suede and brush-off leather gently.',
+    'Let wet shoes dry naturally, away from radiators and direct sunlight.',
+    'Use shoe trees and dust bags to keep shape between wears.',
+    'Protect heels and soles early — small repairs extend a shoe’s life the most.',
+  ] : ['Follow the care label on each garment.', 'Wash knits by hand in cool water and dry flat.', 'Air garments between wears and store folded, not hung, for knits.'];
+  return <ul className="space-y-2 text-black/75 list-none">{items.map(t => <li key={t}>— {t}</li>)}</ul>;
+}
+
+/* =============================== BAG / CHECKOUT =============================== */
+
+function itemInfo(i: BagItem) {
+  if (i.kind === 'preowned') { const po = PRE_OWNED.find(x => x.id === i.id)!; const p = P(po.productId); return { p, price: po.price, label: `Pre-Owned · ${po.condition}`, link: '/pre-owned/' + po.id }; }
+  const p = P(i.id); return { p, price: p.price, label: '', link: '/product/' + p.id };
+}
+
+function BagDrawer() {
+  const { bag, bagOpen, setBagOpen, removeFromBag, setQty } = useApp();
+  useEffect(() => { const k = (e: KeyboardEvent) => e.key === 'Escape' && setBagOpen(false); window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
+  if (!bagOpen) return null;
+  const total = bag.reduce((n, i) => n + itemInfo(i).price * i.qty, 0);
+  return (
+    <div className="fixed inset-0 z-50" role="dialog" aria-label="Shopping bag">
+      <div className="absolute inset-0 bg-black/30" onClick={() => setBagOpen(false)} />
+      <aside className="absolute right-0 top-0 bottom-0 w-full sm:w-[420px] bg-white flex flex-col fade">
+        <div className="h-12 md:h-14 px-4 flex items-center justify-between border-b border-black/10 cap"><span>Bag ({bag.reduce((n, i) => n + i.qty, 0)})</span><button onClick={() => setBagOpen(false)}>Close</button></div>
+        <div className="flex-1 overflow-y-auto">
+          {bag.length === 0 ? <p className="p-4 text-black/60">Your bag is empty.</p> : bag.map(i => {
+            const { p, price, label, link } = itemInfo(i);
+            return (
+              <div key={i.key} className="flex gap-3 p-4 border-b border-black/10">
+                <L to={link} onClick={() => setBagOpen(false)} className="w-20 shrink-0"><Photo slot={p.id} tone={p.tone} /></L>
+                <div className="flex-1 flex flex-col">
+                  <div className="flex justify-between gap-2"><div>{p.name}</div><div>{eur(price * i.qty)}</div></div>
+                  <div className="text-black/50">{p.colour}</div>
+                  {label && <div className="mt-1"><Tag>{label}</Tag></div>}
+                  <div className="text-black/50 mt-1">Size {i.size}</div>
+                  <div className="mt-auto pt-2 flex justify-between items-center cap">
+                    {i.kind === 'new' ? (
+                      <div className="flex items-center gap-3" aria-label="Quantity">
+                        <button onClick={() => setQty(i.key, i.qty - 1)} aria-label="Decrease">−</button><span>{i.qty}</span><button onClick={() => setQty(i.key, i.qty + 1)} aria-label="Increase">+</button>
+                      </div>
+                    ) : <span className="text-black/50">Unique piece</span>}
+                    <button className="ulink" onClick={() => removeFromBag(i.key)}>Remove</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        {bag.length > 0 && (
+          <div className="p-4 border-t border-black/10">
+            <div className="flex justify-between mb-3"><span className="cap">Subtotal</span><span>{eur(total)}</span></div>
+            <L to="/checkout" onClick={() => setBagOpen(false)} className="btn w-full">Checkout</L>
+            <p className="mt-2 text-[11px] text-black/45">Prototype: no payment is taken.</p>
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function Checkout() {
+  const { bag, clearBag } = useApp();
+  const [method, setMethod] = useState<'home' | 'collect'>('home');
+  const [storeId, setStoreId] = useState('');
+  const [reuse, setReuse] = useState(true);
+  const [form, setForm] = useState({ name: '', email: '', address: '' });
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [done, setDone] = useState<null | { ref: string; items: number; total: number }>(null);
+  const total = bag.reduce((n, i) => n + itemInfo(i).price * i.qty, 0);
+  if (done) return (
+    <Confirmation title="Order placed (demo)" ref_={done.ref} lines={[
+      `${done.items} item(s) · ${eur(done.total)}`,
+      method === 'collect' ? `Click & Collect at ${STORES.find(s => s.id === storeId)?.city} (proposed service)` : 'Home delivery in recycled cardboard packaging (proposed)',
+    ]} note="This is a simulated order. No payment was taken and nothing will be shipped." />
+  );
+  if (!bag.length) return <div className="px-4 md:px-6 py-20 fade"><h1 className="text-[34px]">Your bag is empty</h1><L to="/shop/new-in" className="btn mt-6">Continue shopping</L></div>;
+  const submit = (e: any) => {
+    e.preventDefault(); const er: Record<string, string> = {};
+    if (!form.name.trim()) er.name = 'Required'; if (!/\S+@\S+\.\S+/.test(form.email)) er.email = 'Enter a valid email';
+    if (method === 'home' && !form.address.trim()) er.address = 'Required'; if (method === 'collect' && !storeId) er.store = 'Select a store';
+    setErrs(er); if (Object.keys(er).length) return;
+    setDone({ ref: refNo('MI'), items: bag.reduce((n, i) => n + i.qty, 0), total }); clearBag();
+  };
+  return (
+    <form onSubmit={submit} className="fade grid lg:grid-cols-[1.4fr_1fr] gap-10 px-4 md:px-6 pt-10" noValidate>
+      <div>
+        <h1 className="text-[34px] leading-none tracking-[-0.02em] mb-8">Checkout</h1>
+        <div className="cap mb-3">Delivery</div>
+        <div className="grid sm:grid-cols-2 gap-2 mb-8">
+          {[['home', 'Home delivery', 'Standard shipping'], ['collect', 'Click & Collect', 'Collect from a participating store · proposed']].map(([v, t, s]) => (
+            <label key={v} className={`border p-4 cursor-pointer ${method === v ? 'border-black' : 'border-black/20'}`}>
+              <input type="radio" className="sr-only" name="method" checked={method === v} onChange={() => setMethod(v as any)} />
+              <div className="cap">{t}</div><div className="text-black/50 mt-1">{s}</div>
+            </label>
+          ))}
+        </div>
+        <div className="grid sm:grid-cols-2 gap-x-6 gap-y-4">
+          <Field label="Full name" error={errs.name}><input className={`field ${errs.name ? 'err' : ''}`} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></Field>
+          <Field label="Email" error={errs.email}><input type="email" className={`field ${errs.email ? 'err' : ''}`} value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} /></Field>
+          {method === 'home' ? (
+            <div className="sm:col-span-2"><Field label="Delivery address" error={errs.address}><input className={`field ${errs.address ? 'err' : ''}`} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} /></Field></div>
+          ) : (
+            <div className="sm:col-span-2"><Field label="Collection store" error={errs.store}>
+              <select className={`field ${errs.store ? 'err' : ''}`} value={storeId} onChange={e => setStoreId(e.target.value)}>
+                <option value="">Select a store</option>{STORES.map(s => <option key={s.id} value={s.id}>{s.city} — participation illustrative</option>)}
+              </select></Field></div>
+          )}
+        </div>
+        <label className="flex gap-3 items-start mt-8 cursor-pointer">
+          <input type="checkbox" className="mt-0.5 accent-black" checked={reuse} onChange={e => setReuse(e.target.checked)} />
+          <span><span className="cap">Packaging</span><br /><span className="text-black/60">Recycled cardboard, no single-use plastic. Keep the box — it doubles as your returns packaging. (Proposed)</span></span>
+        </label>
+        <div className="mt-8 border border-dashed border-black/30 p-4 text-black/60">Payment is disabled in this academic prototype. No card details are requested or stored.</div>
+      </div>
+      <aside className="lg:sticky lg:top-20 lg:self-start border-t lg:border-t-0 lg:border-l border-black/10 lg:pl-8 pt-6 lg:pt-0">
+        <div className="cap mb-4">Summary</div>
+        {bag.map(i => { const { p, price, label } = itemInfo(i); return (
+          <div key={i.key} className="flex justify-between gap-3 py-2 border-b border-black/10"><div>{p.name} <span className="text-black/50">· {i.size}{label ? ' · ' + label : ''} × {i.qty}</span></div><div>{eur(price * i.qty)}</div></div>
+        ); })}
+        <div className="flex justify-between py-3"><span>Delivery</span><span>{method === 'collect' ? 'Free (proposed)' : 'Calculated at dispatch'}</span></div>
+        <div className="flex justify-between py-3 border-t border-black"><span className="cap">Total</span><span>{eur(total)}</span></div>
+        <button className="btn w-full mt-4">Place order (demo)</button>
+      </aside>
+    </form>
+  );
+}
+
+/* ============================== FORM HELPERS ============================== */
+
+function Field({ label, error, children, hint }: any) {
+  return (
+    <label className="block">
+      <span className="cap text-black/60">{label}</span>
+      {children}
+      {hint && !error && <span className="block text-[11px] text-black/45 mt-1">{hint}</span>}
+      {error && <span className="block text-[11px] text-[#b00020] mt-1" role="alert">{error}</span>}
+    </label>
+  );
+}
+
+function PhotoUpload({ files, setFiles, error }: { files: string[]; setFiles: (f: any) => void; error?: string }) {
+  const onPick = (list: FileList | null) => {
+    if (!list) return;
+    Array.from(list).slice(0, 4 - files.length).forEach(f => { if (!f.type.startsWith('image/')) return; const r = new FileReader(); r.onload = () => setFiles(prev => [...prev, String(r.result)].slice(0, 4) as any); r.readAsDataURL(f); });
+  };
+  return (
+    <div>
+      <span className="cap text-black/60">Photographs (up to 4)</span>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {files.map((src, i) => (
+          <div key={i} className="relative w-20 h-24 bg-black/5"><img src={src} alt={`Upload ${i + 1}`} className="w-full h-full object-cover" />
+            <button type="button" onClick={() => setFiles(files.filter((_, j) => j !== i))} className="absolute top-1 right-1 bg-white text-[10px] px-1" aria-label="Remove photo">×</button></div>
+        ))}
+        {files.length < 4 && (
+          <label className={`w-20 h-24 border border-dashed flex items-center justify-center text-center cap !text-[9px] cursor-pointer ${error ? 'border-[#b00020]' : 'border-black/40 hover:border-black'}`}>
+            Add<br />photo<input type="file" accept="image/*" multiple className="hidden" onChange={e => onPick(e.target.files)} />
+          </label>
+        )}
+      </div>
+      <span className="block text-[11px] text-black/45 mt-1">Images stay in your browser — nothing is uploaded.</span>
+      {error && <span className="block text-[11px] text-[#b00020] mt-1" role="alert">{error}</span>}
+    </div>
+  );
+}
+
+function Confirmation({ title, ref_, lines, note, actions }: any) {
+  return (
+    <div className="fade px-4 md:px-6 py-20 max-w-2xl">
+      <div className="cap text-black/50">Reference</div>
+      <div className="font-mono text-[18px] mt-1">{ref_}</div>
+      <h1 className="text-[34px] md:text-[48px] leading-[0.95] tracking-[-0.02em] mt-8">{title}</h1>
+      <div className="mt-5 space-y-1 text-black/75">{lines.map((l: string) => <p key={l}>{l}</p>)}</div>
+      <p className="mt-6 text-[12px] text-black/50 border-t border-black/10 pt-4">{note}</p>
+      <div className="mt-8 flex flex-wrap gap-3">{actions || <L to="/" className="btn">Back to Miista</L>}</div>
+    </div>
+  );
+}
+
+/* ========================== EDITORIAL HERO (shared) ========================== */
+
+function EditorialHero({ slot, tone, kicker, title, intro, dark = true, tag }: any) {
+  return (
+    <section className="relative">
+      <Photo slot={slot} tone={tone} ratio="aspect-[4/5] md:aspect-[16/8]" label={title}>
+        <div className={`absolute inset-0 p-4 md:p-6 lg:p-10 flex flex-col justify-between text-white bg-gradient-to-t from-black/50 via-black/5 to-black/25`}>
+          <div className="flex justify-between items-start cap"><span>{kicker}</span>{tag && <Tag dark>{tag}</Tag>}</div>
+          <h1 className="text-[48px] md:text-[96px] lg:text-[128px] leading-[0.86] tracking-[-0.04em] max-w-5xl">{title}</h1>
+        </div>
+      </Photo>
+      {intro && <p className="px-4 md:px-6 lg:px-10 pt-8 md:pt-12 text-[20px] md:text-[28px] leading-[1.15] tracking-[-0.01em] max-w-4xl">{intro}</p>}
+    </section>
+  );
+}
+
+function Steps({ items }: { items: [string, string, string][] }) {
+  return (
+    <div className={`grid md:grid-cols-${items.length} border-t border-black`}>
+      {items.map(([n, t, d], i) => (
+        <div key={n} className={`py-6 md:p-6 ${i ? 'md:border-l' : ''} border-black border-b md:border-b-0`}>
+          <div className="text-[48px] md:text-[64px] leading-none tracking-[-0.03em]">{n}</div>
+          <div className="cap mt-6">{t}</div>
+          <p className="mt-2 text-black/70 max-w-xs">{d}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ======================= KEEP THE STORY GOING (REPAIR) ======================= */
+
+const DAMAGE = ['Heel tip or top-piece', 'Sole wear', 'Stitching', 'Zip or hardware', 'Upper scuffs or colour loss', 'Lining or insole', 'Other'];
+
+function RepairForm() {
+  const shoes = useMemo(() => PRODUCTS.filter(p => p.cat === 'shoes'), []);
+  const [f, setF] = useState({ name: '', email: '', order: '', product: '', date: '', damage: '', desc: '', method: '' });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [done, setDone] = useState('');
+  const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
+  const twoYears = (() => { if (!f.date) return null; const d = new Date(f.date); const lim = new Date(); lim.setFullYear(lim.getFullYear() - 2); return d >= lim; })();
+  const submit = (e: any) => {
+    e.preventDefault(); const er: Record<string, string> = {};
+    if (!f.name.trim()) er.name = 'Please enter your name';
+    if (!/\S+@\S+\.\S+/.test(f.email)) er.email = 'Please enter a valid email';
+    if (!f.product) er.product = 'Select the product';
+    if (!f.date) er.date = 'Approximate date required'; else if (new Date(f.date) > new Date()) er.date = 'Date cannot be in the future';
+    if (!f.damage) er.damage = 'Select the type of damage';
+    if (f.desc.trim().length < 15) er.desc = 'Tell us a little more (15 characters minimum)';
+    if (!photos.length) er.photos = 'Add at least one photo';
+    if (!f.method) er.method = 'Choose a repair method';
+    setErrs(er);
+    if (Object.keys(er).length) { document.getElementById('form')?.scrollIntoView({ behavior: 'smooth' }); return; }
+    setDone(refNo('KTSG'));
+  };
+  if (done) return (
+    <div className="border border-black p-6 md:p-10 fade">
+      <div className="cap text-black/50">Request reference</div><div className="font-mono text-[18px] mt-1">{done}</div>
+      <h3 className="text-[32px] md:text-[44px] leading-[0.95] tracking-[-0.02em] mt-6">Your story continues.</h3>
+      <p className="mt-4 text-black/75 max-w-lg">We’d review your {P(f.product).name} within a few days and recommend a repair. {twoYears ? 'Based on the date given, it would fall within the proposed two-year guarantee.' : 'Based on the date given, it would fall outside the two-year guarantee — we would quote before any work.'}</p>
+      <p className="mt-6 text-[12px] text-black/50">Prototype only: this request has not been sent to Miista and no data has been stored.</p>
+      <button className="btn btn-o mt-6" onClick={() => { setDone(''); setF({ name: '', email: '', order: '', product: '', date: '', damage: '', desc: '', method: '' }); setPhotos([]); }}>New request</button>
+    </div>
+  );
+  return (
+    <form onSubmit={submit} noValidate className="grid md:grid-cols-2 gap-x-8 gap-y-6">
+      <Field label="Name *" error={errs.name}><input className={`field ${errs.name ? 'err' : ''}`} value={f.name} onChange={set('name')} autoComplete="name" /></Field>
+      <Field label="Email *" error={errs.email}><input type="email" className={`field ${errs.email ? 'err' : ''}`} value={f.email} onChange={set('email')} autoComplete="email" /></Field>
+      <Field label="Order number" hint="If available"><input className="field" value={f.order} onChange={set('order')} /></Field>
+      <Field label="Product *" error={errs.product}>
+        <select className={`field ${errs.product ? 'err' : ''}`} value={f.product} onChange={set('product')}>
+          <option value="">Select your Miista</option>{shoes.map(p => <option key={p.id} value={p.id}>{p.name} — {p.colour}</option>)}
+        </select>
+      </Field>
+      <Field label="Purchase date *" error={errs.date} hint={twoYears === null ? 'Approximate is fine' : twoYears ? 'Within the proposed 2-year guarantee' : 'Outside 2 years — repair quoted after review'}>
+        <input type="date" className={`field ${errs.date ? 'err' : ''}`} value={f.date} onChange={set('date')} />
+      </Field>
+      <Field label="Type of damage *" error={errs.damage}>
+        <select className={`field ${errs.damage ? 'err' : ''}`} value={f.damage} onChange={set('damage')}><option value="">Select</option>{DAMAGE.map(d => <option key={d}>{d}</option>)}</select>
+      </Field>
+      <div className="md:col-span-2"><Field label="Describe the problem *" error={errs.desc}><textarea rows={3} className={`field resize-none ${errs.desc ? 'err' : ''}`} value={f.desc} onChange={set('desc')} /></Field></div>
+      <div className="md:col-span-2"><PhotoUpload files={photos} setFiles={setPhotos} error={errs.photos} /></div>
+      <fieldset className="md:col-span-2">
+        <legend className="cap text-black/60 mb-2">Preferred repair method *</legend>
+        <div className="grid sm:grid-cols-3 gap-2">
+          {[['store', 'In-store assessment', 'Bring them to a participating store'], ['post', 'Send by post', 'Reuse your original Miista box'], ['local', 'Local specialist', 'Avoids unnecessary transport']].map(([v, t, s]) => (
+            <label key={v} className={`border p-4 cursor-pointer ${f.method === v ? 'border-black bg-black text-white' : errs.method ? 'border-[#b00020]' : 'border-black/20 hover:border-black'}`}>
+              <input type="radio" name="method" value={v} className="sr-only" checked={f.method === v} onChange={set('method')} />
+              <div className="cap">{t}</div><div className="opacity-60 mt-1">{s}</div>
+            </label>
+          ))}
+        </div>
+        {errs.method && <span className="block text-[11px] text-[#b00020] mt-1" role="alert">{errs.method}</span>}
+      </fieldset>
+      <div className="md:col-span-2 flex flex-wrap items-center gap-4"><button className="btn">Submit request</button><span className="text-[11px] text-black/45">Prototype — requests are not sent to Miista.</span></div>
+    </form>
+  );
+}
+
+function RepairPage() {
+  useEffect(() => { if (location.hash.endsWith('#form')) setTimeout(() => document.getElementById('form')?.scrollIntoView(), 50); }, []);
+  return (
+    <div className="fade">
+      <EditorialHero slot="hero-repair" tone="#3d2b20" kicker="Keep the Story Going" tag="Proposed service" title="Keep the story going"
+        intro="Some stories deserve more than one chapter. Through care, repair and considered craftsmanship, we believe the pieces we choose should have the opportunity to stay with us longer." />
+
+      <section className="px-4 md:px-6 lg:px-10 mt-16 grid md:grid-cols-[1fr_1.4fr] gap-10">
+        <div className="cap">The programme</div>
+        <div className="grid sm:grid-cols-2 gap-x-8 gap-y-6">
+          {[
+            ['Two years', 'Eligible Miista footwear is covered by a two-year repair guarantee.'],
+            ['On us', 'Eligible repairs are free of charge. Miista covers the cost.'],
+            ['Online or in store', 'Request a repair here, or have your pair assessed at a participating store.'],
+            ['Close to home', 'Repairs go through our production network where practical, or to trusted local specialists when that avoids unnecessary transport.'],
+          ].map(([t, d]) => <div key={t} className="border-t border-black pt-3"><div className="cap">{t}</div><p className="mt-2 text-black/70">{d}</p></div>)}
+          <p className="sm:col-span-2 text-[11px] text-black/45">Today, Miista shares product care guidance and can recommend external repair specialists. The guarantee above is part of our proposed programme.</p>
+        </div>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-20">
+        <div className="cap mb-6">How it works</div>
+        <Steps items={[
+          ['01', 'Tell us your story', 'Select the Miista product that needs attention and describe the damage.'],
+          ['02', 'Let us take a look', 'Our team reviews the request and recommends an appropriate repair solution.'],
+          ['03', 'Keep walking', 'Your repaired shoes are ready for their next chapter.'],
+        ]} />
+      </section>
+
+      <section className="mt-20 grid md:grid-cols-3 gap-px">
+        {['repair-detail-1', 'repair-detail-2', 'repair-detail-3'].map((s, i) => <Photo key={s} slot={s} tone={['#151515', '#6a4b37', '#5a1e24'][i]} ratio="aspect-[4/5]" label={['Heel', 'Stitch', 'Sole'][i]} />)}
+      </section>
+
+      <section id="form" className="px-4 md:px-6 lg:px-10 mt-20 grid lg:grid-cols-[1fr_2fr] gap-10 scroll-mt-20">
+        <div><div className="cap">Request a repair</div><h2 className="text-[32px] md:text-[44px] leading-[0.95] tracking-[-0.02em] mt-4">Tell us your story.</h2></div>
+        <RepairForm />
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-24 grid lg:grid-cols-[1fr_2fr] gap-10">
+        <div className="cap">Care between chapters</div>
+        <div className="grid md:grid-cols-2 gap-10"><CareList cat="shoes" /><div>
+          <p className="text-black/70">Prefer to talk it through? Bring your pair to a participating store for an assessment.</p>
+          <L to="/stores" className="btn btn-o mt-5">Find a store</L>
+        </div></div>
+      </section>
+    </div>
+  );
+}
+
+/* ============================== PRE-OWNED ============================== */
+
+function PreOwnedCard({ po }: { po: PreOwned }) {
+  const p = P(po.productId);
+  return (
+    <L to={'/pre-owned/' + po.id} className="group block">
+      <Photo slot={'po-' + po.id} hover={'po-' + po.id + '-2'} tone={p.tone} label={p.name + ' · pre-owned'}>
+        <div className="absolute top-2 left-2"><span className="bg-white cap !text-[9px] px-1.5 py-0.5">{po.condition}</span></div>
+      </Photo>
+      <div className="pt-2 flex justify-between gap-2">
+        <div><div>{p.name}</div><div className="text-black/50">{p.colour} · EU {po.size}</div></div>
+        <div className="text-right shrink-0"><div>{eur(po.price)}</div><div className="text-black/40 line-through">{eur(p.price)}</div></div>
+      </div>
+    </L>
+  );
+}
+
+function PreOwnedPage() {
+  const [style, setStyle] = useState('All');
+  const [cond, setCond] = useState<string>('All');
+  const [size, setSize] = useState<string>('All');
+  const [sort, setSort] = useState('featured');
+  const { bag } = useApp();
+  const sold = bag.filter(b => b.kind === 'preowned').map(b => b.id);
+  const styles = ['All', ...Array.from(new Set(PRE_OWNED.map(po => P(po.productId).type)))];
+  let items = PRE_OWNED.filter(po => (style === 'All' || P(po.productId).type === style) && (cond === 'All' || po.condition === cond) && (size === 'All' || String(po.size) === size));
+  if (sort === 'low') items = [...items].sort((a, b) => a.price - b.price);
+  if (sort === 'high') items = [...items].sort((a, b) => b.price - a.price);
+  return (
+    <div className="fade">
+      <EditorialHero slot="hero-preowned" tone="#151515" kicker="Miista Pre-Owned" tag="Proposed service" title="A second step. A second story." />
+      <section className="px-4 md:px-6 lg:px-10 mt-10 grid md:grid-cols-[1.4fr_1fr] gap-10 items-end">
+        <p className="text-[20px] md:text-[26px] leading-[1.15] tracking-[-0.01em] max-w-3xl">
+          Miista footwear, returned by its first owner, then assessed, cleaned, repaired and restored by our team. Available here and on dedicated displays in selected stores.
+        </p>
+        <L to="/pre-owned/sell" className="group block border border-black p-5 hover:bg-black hover:text-white transition-colors">
+          <div className="cap">Give your Miista a second story</div>
+          <div className="mt-2 opacity-70">Return a pair for store credit, set after assessment.</div>
+          <div className="mt-4 cap">Start →</div>
+        </L>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-12 grid sm:grid-cols-3 gap-6">
+        {CONDITIONS.map(c => <div key={c.name} className="border-t border-black pt-3"><div className="cap">{c.name}</div><p className="mt-2 text-black/70">{c.text}</p></div>)}
+      </section>
+
+      <div className="mt-12">
+        <FilterBar types={styles} type={style} setType={setStyle} sort={sort} setSort={setSort} count={items.length} extra={<>
+          <span className="text-black/20">|</span>
+          <select aria-label="Condition" className="bg-transparent cap outline-none" value={cond} onChange={e => setCond(e.target.value)}><option value="All">Condition: All</option>{CONDITIONS.map(c => <option key={c.name}>{c.name}</option>)}</select>
+          <select aria-label="Size" className="bg-transparent cap outline-none" value={size} onChange={e => setSize(e.target.value)}><option value="All">Size: All</option>{SHOE_SIZES.map(s => <option key={s}>{s}</option>)}</select>
+        </>} />
+        <p className="px-4 md:px-6 -mt-3 mb-6 text-[11px] text-black/45">Illustrative stock, prices and conditions for the prototype — not real Miista inventory.</p>
+        {items.length ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 md:gap-x-3 gap-y-8 px-2 md:px-3">
+            {items.map(po => <div key={po.id} className={sold.includes(po.id) ? 'opacity-50' : ''}><PreOwnedCard po={po} /></div>)}
+          </div>
+        ) : <p className="px-4 md:px-6 py-10 text-black/60">No pairs match these filters. <button className="underline" onClick={() => { setStyle('All'); setCond('All'); setSize('All'); }}>Clear filters</button></p>}
+      </div>
+    </div>
+  );
+}
+
+function PreOwnedDetail({ id }: { id: string }) {
+  const po = PRE_OWNED.find(x => x.id === id);
+  const { addToBag, bag } = useApp();
+  if (!po) return <NotFound />;
+  const p = P(po.productId);
+  const inBag = bag.some(b => b.kind === 'preowned' && b.id === po.id);
+  return (
+    <div className="fade">
+      <div className="grid lg:grid-cols-[1.5fr_1fr]">
+        <div className="grid md:grid-cols-2 gap-px">
+          {(GALLERY[p.id] || [0, 1]).map((_, i) => <Photo key={i} eager={i < 2} slot={i === 0 ? 'po-' + po.id : `po-${po.id}-${i + 1}`} tone={p.tone} label={`${p.name} · pre-owned · view ${i + 1}`} className={(GALLERY[p.id] || []).length === 3 && i === 2 ? 'md:col-span-2 md:aspect-[4/3]' : ''} />)}
+        </div>
+        <div className="px-4 md:px-6 lg:px-10 py-8 lg:sticky lg:top-14 lg:self-start">
+          <div className="cap text-black/50 mb-2"><L to="/pre-owned" className="ulink">Pre-Owned</L> / {p.type}</div>
+          <h1 className="text-[24px] leading-tight">{p.name}</h1>
+          <div className="text-black/60">{p.colour}</div>
+          <div className="mt-3 flex gap-3 items-baseline"><span>{eur(po.price)}</span><span className="text-black/40 line-through">{eur(p.price)}</span><span className="text-black/50 text-[11px]">Original retail</span></div>
+          <div className="mt-6 grid grid-cols-2 border-y border-black/15">
+            <div className="py-3 pr-3 border-r border-black/15"><div className="cap text-black/50">Size</div><div className="mt-1">EU {po.size}</div></div>
+            <div className="py-3 pl-3"><div className="cap text-black/50">Condition</div><div className="mt-1">{po.condition}</div></div>
+          </div>
+          <p className="mt-3 text-black/60 text-[12px]">{CONDITIONS.find(c => c.name === po.condition)!.text}</p>
+          <button className="btn w-full mt-6" disabled={inBag} onClick={() => addToBag({ kind: 'preowned', id: po.id, size: 'EU ' + po.size })}>{inBag ? 'In your bag' : 'Add to bag'}</button>
+          <p className="mt-2 text-[11px] text-black/45">One of one. Illustrative listing — not real stock.</p>
+          <div className="mt-8">
+            <Accordion title="Visible imperfections" open id="po-imp"><p className="text-black/75">{po.imperfections}</p></Accordion>
+            <Accordion title="Restoration" open id="po-res"><p className="text-black/75">{po.restoration}</p><p className="mt-2 text-black/50 text-[12px]">Assessed, cleaned and restored by the Miista team (proposed process).</p></Accordion>
+            <Accordion title="Care" id="po-care"><CareList cat="shoes" /></Accordion>
+            <Accordion title="Discover your product's story" id="po-dpp"><ProductPassport p={p} /></Accordion>
+            <div className="border-t border-black" />
+          </div>
+          <L to={'/product/' + p.id} className="mt-6 inline-block cap ulink on">View the new {p.name}</L>
+        </div>
+      </div>
+      <SectionHead title="More pre-owned" right={<L to="/pre-owned" className="cap ulink on">View all</L>} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-x-2 md:gap-x-3 gap-y-8 px-2 md:px-3">{PRE_OWNED.filter(x => x.id !== po.id).slice(0, 4).map(x => <PreOwnedCard key={x.id} po={x} />)}</div>
+    </div>
+  );
+}
+
+function SellFlow() {
+  const shoes = useMemo(() => PRODUCTS.filter(p => p.cat === 'shoes'), []);
+  const [step, setStep] = useState(0);
+  const [f, setF] = useState({ product: '', size: '', condition: '', date: '', store: '', name: '', email: '', phone: '' });
+  const [photos, setPhotos] = useState<string[]>([]);
+  const [errs, setErrs] = useState<Record<string, string>>({});
+  const [done, setDone] = useState('');
+  const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
+  const validate = (s: number) => {
+    const er: Record<string, string> = {};
+    if (s === 0) { if (!f.product) er.product = 'Select your model'; if (!f.size) er.size = 'Select a size'; if (!f.date) er.date = 'Approximate date required'; }
+    if (s === 1) { if (!f.condition) er.condition = 'Select a condition'; if (photos.length < 2) er.photos = 'Add at least two photos (side and sole)'; }
+    if (s === 2) { if (!f.store) er.store = 'Select a store'; if (!f.name.trim()) er.name = 'Required'; if (!/\S+@\S+\.\S+/.test(f.email)) er.email = 'Enter a valid email'; }
+    setErrs(er); return !Object.keys(er).length;
+  };
+  const next = () => { if (validate(step)) setStep(step + 1); };
+  const STEPS = ['Your pair', 'Condition', 'Drop-off & contact', 'Review'];
+  if (done) return (
+    <Confirmation title="Thank you. Your pair’s next chapter starts here." ref_={done}
+      lines={[`${P(f.product).name} — ${P(f.product).colour}, EU ${f.size}`, `Drop off at Miista ${STORES.find(s => s.id === f.store)!.city}. Bring this reference.`, 'Store credit is set after our team has assessed and accepted your pair.']}
+      note="Prototype only: this submission has not been sent to Miista. Store participation and credit are illustrative."
+      actions={<><L to="/pre-owned" className="btn">Shop Pre-Owned</L><L to="/" className="btn btn-o">Home</L></>} />
+  );
+  return (
+    <div className="fade px-4 md:px-6 lg:px-10 pt-10 grid lg:grid-cols-[1fr_1.6fr] gap-12">
+      <div>
+        <div className="cap text-black/50"><L to="/pre-owned" className="ulink">Pre-Owned</L></div>
+        <h1 className="text-[40px] md:text-[64px] leading-[0.9] tracking-[-0.03em] mt-4">Give your Miista a second story</h1>
+        <p className="mt-6 text-black/70 max-w-sm">Bring a pair you no longer wear to a participating store. We assess it, and if accepted, restore it for Miista Pre-Owned. You receive store credit — the amount depends on the model and its condition, and is confirmed after assessment.</p>
+        <p className="mt-4 text-[11px] text-black/45">If a pair can’t be restored, we’ll offer to direct it to <L to="/miista-x-scrap" className="underline">Miista × SCRAP</L> instead.</p>
+      </div>
+      <div>
+        <ol className="flex gap-4 cap mb-8 overflow-x-auto noscroll">
+          {STEPS.map((s, i) => <li key={s} className={`shrink-0 pb-1 ${i === step ? 'border-b border-black' : i < step ? 'text-black' : 'text-black/35'}`}>{String(i + 1).padStart(2, '0')} {s}</li>)}
+        </ol>
+        <div className="fade" key={step}>
+          {step === 0 && <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
+            <div className="md:col-span-2"><Field label="Product model *" error={errs.product}><select className={`field ${errs.product ? 'err' : ''}`} value={f.product} onChange={set('product')}><option value="">Select</option>{shoes.map(p => <option key={p.id} value={p.id}>{p.name} — {p.colour}</option>)}<option value="other" disabled>Older styles: add in next version</option></select></Field></div>
+            <Field label="Size (EU) *" error={errs.size}><select className={`field ${errs.size ? 'err' : ''}`} value={f.size} onChange={set('size')}><option value="">Select</option>{SHOE_SIZES.map(s => <option key={s}>{s}</option>)}</select></Field>
+            <Field label="Approximate purchase date *" error={errs.date}><input type="month" className={`field ${errs.date ? 'err' : ''}`} value={f.date} onChange={set('date')} /></Field>
+          </div>}
+          {step === 1 && <div className="space-y-6">
+            <fieldset><legend className="cap text-black/60 mb-2">How would you describe them? *</legend>
+              <div className="grid sm:grid-cols-3 gap-2">{CONDITIONS.map(c => (
+                <label key={c.name} className={`border p-4 cursor-pointer ${f.condition === c.name ? 'border-black bg-black text-white' : errs.condition ? 'border-[#b00020]' : 'border-black/20 hover:border-black'}`}>
+                  <input type="radio" name="cond" className="sr-only" value={c.name} checked={f.condition === c.name} onChange={set('condition')} />
+                  <div className="cap">{c.name}</div><div className="opacity-60 mt-1 text-[12px]">{c.text}</div>
+                </label>))}</div>
+              {errs.condition && <span className="block text-[11px] text-[#b00020] mt-1" role="alert">{errs.condition}</span>}
+              <p className="text-[11px] text-black/45 mt-2">Final condition is confirmed by our team in store.</p>
+            </fieldset>
+            <PhotoUpload files={photos} setFiles={setPhotos} error={errs.photos} />
+          </div>}
+          {step === 2 && <div className="grid md:grid-cols-2 gap-x-8 gap-y-6">
+            <div className="md:col-span-2"><Field label="Preferred participating store *" error={errs.store}><select className={`field ${errs.store ? 'err' : ''}`} value={f.store} onChange={set('store')}><option value="">Select</option>{STORES.map(s => <option key={s.id} value={s.id}>{s.city} — participation illustrative</option>)}</select></Field></div>
+            <Field label="Name *" error={errs.name}><input className={`field ${errs.name ? 'err' : ''}`} value={f.name} onChange={set('name')} /></Field>
+            <Field label="Email *" error={errs.email}><input type="email" className={`field ${errs.email ? 'err' : ''}`} value={f.email} onChange={set('email')} /></Field>
+            <Field label="Phone" hint="Optional"><input className="field" value={f.phone} onChange={set('phone')} /></Field>
+          </div>}
+          {step === 3 && <div>
+            <dl className="border-t border-black/15">
+              {[['Model', `${P(f.product).name} — ${P(f.product).colour}`], ['Size', 'EU ' + f.size], ['Purchased', f.date], ['Condition (your view)', f.condition], ['Photos', `${photos.length} added`], ['Store', 'Miista ' + STORES.find(s => s.id === f.store)!.city], ['Contact', `${f.name} · ${f.email}`], ['Store credit', 'Determined after assessment']].map(([k, v]) => (
+                <div key={k} className="grid grid-cols-[150px_1fr] py-2 border-b border-black/15"><dt className="text-black/50">{k}</dt><dd>{v}</dd></div>))}
+            </dl>
+            <div className="flex gap-2 mt-4">{photos.map((s, i) => <img key={i} src={s} alt="" className="w-16 h-20 object-cover" />)}</div>
+          </div>}
+        </div>
+        <div className="mt-10 flex gap-3">
+          {step > 0 && <button className="btn btn-o" onClick={() => setStep(step - 1)}>Back</button>}
+          {step < 3 ? <button className="btn" onClick={next}>Continue</button> : <button className="btn" onClick={() => setDone(refNo('PO'))}>Submit (demo)</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================== MIISTA × SCRAP ============================== */
+
+function StoreLocator({ service }: { service?: string }) {
+  const [sel, setSel] = useState('barcelona');
+  const [q, setQ] = useState('');
+  const list = STORES.filter(s => (s.city + ' ' + s.country).toLowerCase().includes(q.toLowerCase()));
+  const s = STORES.find(x => x.id === sel)!;
+  return (
+    <div className="grid md:grid-cols-[1fr_1.4fr] border border-black">
+      <div className="border-b md:border-b-0 md:border-r border-black">
+        <div className="p-4 border-b border-black"><input className="field !py-1" placeholder="Search city or country" value={q} onChange={e => setQ(e.target.value)} aria-label="Search stores" /></div>
+        <ul>
+          {list.map(x => (
+            <li key={x.id}><button onClick={() => setSel(x.id)} aria-pressed={sel === x.id} className={`w-full text-left p-4 border-b border-black/15 ${sel === x.id ? 'bg-black text-white' : 'hover:bg-black/5'}`}>
+              <div className="flex justify-between cap"><span>Miista {x.city}</span><span className="opacity-60">{x.country}</span></div>
+              <div className="mt-1 opacity-70">{x.address}</div>
+            </button></li>
+          ))}
+          {!list.length && <li className="p-4 text-black/50">No stores found.</li>}
+        </ul>
+      </div>
+      <div className="relative min-h-[320px] bg-[#efede8] overflow-hidden">
+        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
+          {Array.from({ length: 11 }).map((_, i) => <line key={'h' + i} x1="0" x2="100" y1={i * 10} y2={i * 10} stroke="#000" strokeOpacity=".07" strokeWidth=".2" />)}
+          {Array.from({ length: 11 }).map((_, i) => <line key={'v' + i} y1="0" y2="100" x1={i * 10} x2={i * 10} stroke="#000" strokeOpacity=".07" strokeWidth=".2" />)}
+          <path d="M20 48 Q 30 30 41 33" stroke="#000" strokeOpacity=".15" strokeWidth=".3" fill="none" strokeDasharray="1 1" />
+        </svg>
+        {STORES.map(x => (
+          <button key={x.id} onClick={() => setSel(x.id)} className="absolute -translate-x-1/2 -translate-y-1/2 group" style={{ left: x.x + 30 + '%', top: x.y + '%' }} aria-label={'Select ' + x.city}>
+            <span className={`block rounded-full ${sel === x.id ? 'w-4 h-4 bg-black' : 'w-2.5 h-2.5 bg-black/60'}`} />
+            <span className="absolute left-5 top-1/2 -translate-y-1/2 cap whitespace-nowrap">{x.city}</span>
+          </button>
+        ))}
+        <div className="absolute left-0 right-0 bottom-0 bg-white border-t border-black p-4 fade" key={s.id}>
+          <div className="cap">Miista {s.city}</div>
+          <div className="mt-1 text-black/70">{s.address}{!s.verified && ' — see miista.com/stores'}</div>
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {['Repair assessment', 'Pre-Owned returns', 'SCRAP collection', 'Click & Collect'].map(t => <span key={t} className={`cap !text-[9px] px-1.5 py-0.5 border ${service && t.startsWith(service) ? 'bg-black text-white border-black' : 'border-black/40'}`}>{t}</span>)}
+          </div>
+          <div className="mt-2 text-[11px] text-black/45">Participation in proposed programmes is illustrative and not confirmed.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScrapPage() {
+  return (
+    <div className="fade">
+      <EditorialHero slot="hero-scrap" tone="#8d8c88" dark={false} kicker="Miista × SCRAP" tag="Proposed concept" title="Miista × SCRAP"
+        intro="When a shoe can no longer be worn, its materials may still have a story to tell. We are exploring new ways to recover, reimagine and transform what would otherwise be discarded." />
+
+      <section className="px-4 md:px-6 lg:px-10 mt-20 grid md:grid-cols-[1fr_1.4fr] gap-10">
+        <div className="cap">The next chapter</div>
+        <div className="space-y-4 text-[15px] leading-relaxed text-black/80 max-w-2xl">
+          <p>Some pairs reach the end of what repair can do. Rather than letting them disappear, we would collect them through our stores and look again — first for a chance to repair or resell, then for what their materials could become.</p>
+          <p>Leather, rubber and other components are recovered where technically feasible, with the aim of upcycled accessories, limited editions and, over time, suitable recycled materials in future products.</p>
+          <p className="text-[11px] text-black/45">Miista × SCRAP is a proposed collaboration developed for an academic project. It is not an announced partnership.</p>
+        </div>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-20">
+        <div className="cap mb-6">How it works</div>
+        <Steps items={[
+          ['01', 'Bring them back', 'Return footwear that can no longer be worn to a participating store.'],
+          ['02', 'We assess', 'Each pair is examined: repair, resale or material recovery.'],
+          ['03', 'Materials reimagined', 'Suitable components are recovered for reuse, recycling or upcycling.'],
+          ['04', 'A new beginning', 'You receive store credit or a discount, under the programme’s conditions.'],
+        ]} />
+      </section>
+
+      <section className="mt-24">
+        <div className="px-4 md:px-6 lg:px-10 cap mb-6">Material stories</div>
+        <div className="grid md:grid-cols-[2fr_1fr_1fr] gap-px">
+          {[
+            ['mat-leather', '#4a3426', 'Leather', 'Recovered panels and offcuts, with potential upcycling into small accessories.'],
+            ['mat-rubber', '#232323', 'Rubber', 'Soles and heel pieces, potentially recovered for new components or applications.'],
+            ['mat-other', '#b8b2a6', 'Other materials', 'Linings, threads and hardware, separated and processed appropriately where feasible.'],
+          ].map(([slot, tone, t, d], i) => (
+            <div key={slot}>
+              <Photo slot={slot} tone={tone} ratio={i === 0 ? 'aspect-[4/5] md:aspect-[4/3]' : 'aspect-[4/5] md:aspect-auto md:h-full'} label={t + ' close-up'}>
+                <div className="absolute inset-0 p-4 md:p-6 text-white bg-gradient-to-b from-black/50 via-transparent to-transparent">
+                  <div className="text-[32px] md:text-[44px] leading-none tracking-[-0.02em]">{t}</div>
+                  <p className="mt-3 max-w-xs opacity-80">{d}</p>
+                </div>
+              </Photo>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-24">
+        <div className="flex justify-between items-end mb-6"><div className="cap">Find a collection point</div><L to="/stores" className="cap ulink on">All stores</L></div>
+        <StoreLocator service="SCRAP" />
+      </section>
+
+      <section className="mt-24">
+        <div className="px-4 md:px-6 lg:px-10 flex justify-between items-end mb-6"><div className="cap">Future creations</div><Tag>Concepts — not for sale</Tag></div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-x-2 md:gap-x-3 gap-y-8 px-2 md:px-3">
+          {[
+            ['Offcut Card Case', 'Recovered leather', '#4a3426'], ['Heel Loop Key Ring', 'Recovered leather & hardware', '#5a1e24'],
+            ['Patchwork Pouch', 'Mixed recovered leathers', '#6a4b37'], ['Sole Study', 'Limited edition · recovered rubber', '#232323'],
+          ].map(([n, m, t]) => (
+            <div key={n}>
+              <Photo slot={'concept-' + slug(n)} tone={t} label="Concept render pending"><div className="absolute top-2 left-2"><span className="bg-white cap !text-[9px] px-1.5 py-0.5">Concept</span></div></Photo>
+              <div className="pt-2"><div>{n}</div><div className="text-black/50">{m}</div></div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ============================== OUR PRACTICES ============================== */
+
+function PracticesPage() {
+  const materials = [
+    ['Leather', 'Sourced from tanneries holding LWG Gold ratings.', '#4a3426'],
+    ['Recycled wool', 'With GRS or RCS certification.', '#8d8c88'],
+    ['Recycled cotton', 'With GRS or RCS certification.', '#e7e0d1'],
+    ['Organic cotton', 'With GOTS or OCS certification.', '#d6cfbf'],
+    ['TENCEL™ Lyocell', 'As an alternative to conventional viscose where suitable.', '#5d6f8a'],
+    ['Denim finishing', 'Lower-impact processing technologies, such as Jeanologia.', '#3c4c66'],
+    ['Recycled rubber', 'Where technically appropriate.', '#232323'],
+  ];
+  return (
+    <div className="fade">
+      <EditorialHero slot="hero-practices" tone="#151515" kicker="Our Practices" tag="Proposed objectives" title="Material matters" />
+      <section className="px-4 md:px-6 lg:px-10 mt-10 grid md:grid-cols-[1fr_1.4fr] gap-10">
+        <div className="cap">Where we are</div>
+        <div className="max-w-2xl space-y-3 text-black/80 text-[15px] leading-relaxed">
+          <p>Our shoes are designed in London and handmade in Europe. We share care guidance for every piece, and can point you to repair specialists.</p>
+          <p>Below are the sourcing and production objectives in our proposed next chapter. They are goals, not claims about current products — certifications are only shown where they can be evidenced.</p>
+        </div>
+      </section>
+
+      <section className="mt-16 grid grid-cols-2 md:grid-cols-4 gap-px">
+        {materials.map(([t, d, tone], i) => {
+          const light = parseInt((tone as string).slice(1), 16) > 0x999999;
+          return (
+            <Photo key={t} slot={'material-' + slug(t)} tone={tone} ratio={i === 0 ? 'aspect-[3/4] md:aspect-auto md:row-span-2 md:h-full' : 'aspect-[3/4]'} className={i === 0 ? 'md:row-span-2' : ''} label={t + ' close-up'}>
+              <div className="absolute inset-0 p-4 flex flex-col justify-between text-white bg-gradient-to-t from-black/55 via-transparent to-black/25">
+                <span className="cap opacity-70">Objective {String(i + 1).padStart(2, '0')}</span>
+                <div><div className="text-[22px] md:text-[28px] leading-none tracking-[-0.02em]">{t}</div><p className="mt-2 opacity-80 text-[12px] max-w-[220px]">{d}</p></div>
+              </div>
+            </Photo>
+          );
+        })}
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-24 grid md:grid-cols-[1fr_1.4fr] gap-10">
+        <div><div className="cap">Transparency</div><h2 className="text-[32px] md:text-[44px] leading-[0.95] tracking-[-0.02em] mt-4">Discover your product’s story.</h2></div>
+        <div className="text-black/80 max-w-2xl">
+          <p>A digital product passport on footwear pages: material, supplier, production, care and next life, in one place. Information we can’t yet verify is marked as such.</p>
+          <div className="mt-6 flex items-center gap-2 text-[10px] uppercase tracking-mi flex-wrap">
+            {['Material', 'Supplier', 'Production', 'Product', 'Care', 'Next Life'].map((s, i, a) => <span key={s} className="flex items-center gap-2">{s}{i < a.length - 1 && <span className="text-black/30">→</span>}</span>)}
+          </div>
+          <L to="/product/araxi-boots-black-leather" className="btn btn-o mt-6">See an example</L>
+        </div>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-24">
+        <div className="cap mb-6">Distribution & packaging</div>
+        <div className="grid md:grid-cols-2 gap-px bg-black border border-black">
+          {[
+            ['Moving goods', ['Consolidated supplier shipments', 'More rail and sea freight where appropriate', 'Less reliance on unnecessary air freight', 'Better logistics and route planning', 'Reusable transport containers and hangers']],
+            ['Reaching you', ['Recycled cardboard packaging', 'No unnecessary single-use plastics', 'Original packaging reused for returns', 'Click & Collect at participating stores']],
+          ].map(([t, items]: any) => (
+            <div key={t} className="bg-white p-6">
+              <div className="text-[22px] tracking-[-0.01em]">{t}</div>
+              <ul className="mt-4">{items.map((x: string) => <li key={x} className="py-2 border-t border-black/10">{x}</li>)}</ul>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] text-black/45">Proposed improvements, not verified existing practices. No carbon reduction figures are claimed.</p>
+      </section>
+
+      <section className="px-4 md:px-6 lg:px-10 mt-24 grid sm:grid-cols-3 gap-px bg-black border border-black">
+        {[['Keep the Story Going', 'Repair', '/keep-the-story-going'], ['Miista Pre-Owned', 'Resale', '/pre-owned'], ['Miista × SCRAP', 'Recovery', '/miista-x-scrap']].map(([t, k, to]) => (
+          <L key={to} to={to} className="bg-white p-6 hover:bg-black hover:text-white transition-colors"><div className="cap opacity-60">{k}</div><div className="text-[22px] mt-2 tracking-[-0.01em]">{t}</div><div className="cap mt-6">Discover →</div></L>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+/* ============================ INFO / SMALL PAGES ============================ */
+
+function InfoPage({ title, children }: any) {
+  return <div className="fade px-4 md:px-6 lg:px-10 pt-10 max-w-3xl"><h1 className="text-[40px] md:text-[56px] leading-[0.9] tracking-[-0.03em] mb-10">{title}</h1><div className="space-y-4 text-black/80 leading-relaxed">{children}</div></div>;
+}
+const VerifyNote = () => <p className="text-[11px] text-black/45 border-t border-black/10 pt-3">Prototype placeholder — current policy to be taken from miista.com before presentation.</p>;
+
+function StoresPage() {
+  return (
+    <div className="fade px-4 md:px-6 lg:px-10 pt-10">
+      <h1 className="text-[40px] md:text-[56px] leading-[0.9] tracking-[-0.03em] mb-10">Stores</h1>
+      <StoreLocator />
+      <div className="mt-10 grid sm:grid-cols-2 md:grid-cols-4 gap-6">
+        {STORES.map(s => <div key={s.id} className="border-t border-black pt-3"><div className="cap">Miista {s.city}</div><p className="mt-2 text-black/70">{s.address}</p></div>)}
+      </div>
+    </div>
+  );
+}
+
+function StoryPage({ id }: { id: string }) {
+  const s = STORIES.find(x => x.id === id);
+  if (!s) return <NotFound />;
+  return (
+    <div className="fade">
+      <EditorialHero slot={'story-' + s.id} tone={s.tone} kicker={s.kicker} title={s.title} intro={s.text} />
+      <div className="px-4 md:px-6 lg:px-10 mt-10 text-black/60">The full story lives on miista.com. <L to="/stories" className="underline">All stories</L></div>
+    </div>
+  );
+}
+
+function Stories() {
+  return (
+    <div className="fade px-2 md:px-3 pt-10">
+      <h1 className="px-2 md:px-3 text-[40px] md:text-[56px] leading-[0.9] tracking-[-0.03em] mb-10">Stories</h1>
+      <div className="grid md:grid-cols-3 gap-8 md:gap-3">
+        {STORIES.map(s => <StoryRow key={s.id} s={s} />)}
+        <StoryRow s={{ id: 'continuing-the-story', kicker: 'Continuing the story', title: 'Repair, resale, recovery', text: 'A shoe can be repaired. A shoe can have another owner. A shoe that can no longer be worn can become a source of new materials.', tone: '#3d2b20', to: '/our-practices' }} />
+      </div>
+    </div>
+  );
+}
+
+function Wishlist() {
+  const { wish } = useApp();
+  const items = PRODUCTS.filter(p => wish.includes(p.id));
+  return (
+    <div className="fade pt-10">
+      <h1 className="px-4 md:px-6 text-[40px] md:text-[56px] leading-[0.9] tracking-[-0.03em] mb-10">Wishlist</h1>
+      {items.length ? <ProductGrid items={items} /> : <p className="px-4 md:px-6 text-black/60">Nothing saved yet. Hover a product and tap ♡.</p>}
+    </div>
+  );
+}
+
+function NotFound() {
+  return <div className="fade px-4 md:px-6 py-24"><h1 className="text-[40px] tracking-[-0.03em]">Page not found</h1><L to="/" className="btn mt-6">Back to home</L></div>;
+}
+
+/* ================================== APP ================================== */
+
+function Toast({ msg }: { msg: string }) {
+  if (!msg) return null;
+  return <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] bg-black text-white cap px-4 py-3 fade" role="status">{msg}</div>;
+}
+
+function PrototypeBadge() {
+  const [hide, setHide] = useState(store.get('badge-hidden', false));
+  if (hide) return null;
+  return (
+    <div className="fixed bottom-3 left-3 z-40 bg-white/90 backdrop-blur border border-black/15 text-[10px] uppercase tracking-mi px-2.5 py-1.5 flex gap-3 items-center">
+      <span>Academic prototype · not operated by Miista</span>
+      <button onClick={() => { setHide(true); store.set('badge-hidden', true); }} aria-label="Dismiss">×</button>
+    </div>
+  );
+}
+
+function Router({ route }: { route: string }) {
+  const path = route.split('#')[0].split('?')[0];
+  const seg = path.split('/').filter(Boolean);
+  switch (seg[0]) {
+    case undefined: return <Home />;
+    case 'shop': return <Category key={seg[1]} cat={seg[1]} />;
+    case 'product': return <ProductDetail key={seg[1]} id={seg[1]} />;
+    case 'pre-owned':
+      if (seg[1] === 'sell') return <SellFlow />;
+      return seg[1] ? <PreOwnedDetail key={seg[1]} id={seg[1]} /> : <PreOwnedPage />;
+    case 'keep-the-story-going': return <RepairPage />;
+    case 'miista-x-scrap': return <ScrapPage />;
+    case 'our-practices': return <PracticesPage />;
+    case 'stores': return <StoresPage />;
+    case 'stories': return seg[1] ? <StoryPage id={seg[1]} /> : <Stories />;
+    case 'wishlist': return <Wishlist />;
+    case 'checkout': return <Checkout />;
+    case 'product-care': return <InfoPage title="Product Care"><CareList cat="shoes" /><p>Need more than care? Request a repair through <L to="/keep-the-story-going" className="underline">Keep the Story Going</L>.</p></InfoPage>;
+    case 'shipping': return <InfoPage title="Shipping"><p>Orders are dispatched in recycled cardboard packaging without unnecessary single-use plastic (proposed).</p><p>Click & Collect at participating stores is available as an illustrative option at checkout.</p><VerifyNote /></InfoPage>;
+    case 'returns': return <InfoPage title="Returns"><p>Please reuse your original Miista box for returns where possible (proposed).</p><p>Looking to pass on a pair you’ve worn? <L to="/pre-owned/sell" className="underline">Give your Miista a second story</L>.</p><VerifyNote /></InfoPage>;
+    case 'faqs': return <InfoPage title="FAQs">
+      <Accordion title="Is my pair covered by the repair guarantee?" id="f1"><p>In the proposed programme, eligible footwear is covered for two years from purchase. Submit a request and we’ll confirm.</p></Accordion>
+      <Accordion title="How much store credit will I get for Pre-Owned?" id="f2"><p>Credit is set after our team assesses and accepts your pair. There is no fixed amount.</p></Accordion>
+      <Accordion title="Is Miista × SCRAP live?" id="f3"><p>No. It is a proposed concept developed for an academic project.</p></Accordion>
+      <div className="border-t border-black" /></InfoPage>;
+    case 'contact': return <InfoPage title="Contact Us"><p>This prototype does not connect to Miista customer service. For real enquiries, visit miista.com.</p></InfoPage>;
+    case 'privacy': return <InfoPage title="Privacy Policy"><p>This prototype stores your bag, wishlist and any images you add in your own browser only. Nothing is sent anywhere.</p></InfoPage>;
+    case 'account': return <InfoPage title="Account"><p>Accounts are not available in this prototype.</p><L to="/wishlist" className="btn btn-o">View wishlist</L></InfoPage>;
+    default: return <NotFound />;
+  }
+}
+
+function App() {
+  const route = useHashRoute();
+  const [bag, setBag] = useState<BagItem[]>(store.get('bag', []));
+  const [wish, setWish] = useState<string[]>(store.get('wish', []));
+  const [images, setImages] = useState<Record<string, string>>(store.get('images', {}));
+  const [bagOpen, setBagOpen] = useState(false);
+  const [imageMode, setImageMode] = useState(false);
+  const [msg, setMsg] = useState('');
+  const t = useRef<any>();
+  useEffect(() => store.set('bag', bag), [bag]);
+  useEffect(() => store.set('wish', wish), [wish]);
+  useEffect(() => store.set('images', images), [images]);
+
+  const toast = (m: string) => { setMsg(m); clearTimeout(t.current); t.current = setTimeout(() => setMsg(''), 2200); };
+  const ctx: Ctx = {
+    bag, bagOpen, setBagOpen, wish, images, imageMode, setImageMode, toast,
+    addToBag: (i) => {
+      const key = i.kind + ':' + i.id + ':' + i.size;
+      if (i.kind === 'preowned' && bag.some(b => b.key === key)) { toast('Already in your bag'); return false; }
+      setBag(prev => prev.some(b => b.key === key) ? prev.map(b => b.key === key ? { ...b, qty: b.qty + 1 } : b) : [...prev, { ...i, key, qty: 1 }]);
+      setBagOpen(true); return true;
+    },
+    removeFromBag: (k) => setBag(prev => prev.filter(b => b.key !== k)),
+    setQty: (k, q) => setBag(prev => q <= 0 ? prev.filter(b => b.key !== k) : prev.map(b => b.key === k ? { ...b, qty: Math.min(q, 5) } : b)),
+    clearBag: () => setBag([]),
+    toggleWish: (id) => { setWish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]); toast(wish.includes(id) ? 'Removed from wishlist' : 'Saved to wishlist'); },
+    setImage: (k, v) => setImages(prev => { const n = { ...prev }; if (v) n[k] = v; else delete n[k]; return n; }),
+  };
+  return (
+    <AppCtx.Provider value={ctx}>
+      {imageMode && <div className="sticky top-0 z-50 bg-black text-white cap px-4 py-2 flex justify-between"><span>Image mode — drop a photo on any slot (saved in this browser)</span><button onClick={() => setImageMode(false)} className="underline">Done</button></div>}
+      <Header route={route} />
+      <main key={route} className="min-h-[60vh]"><Router route={route} /></main>
+      <Footer />
+      <BagDrawer />
+      <PrototypeBadge />
+      <Toast msg={msg} />
+    </AppCtx.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')!).render(<App />);
+</script>
+</body>
+</html>
